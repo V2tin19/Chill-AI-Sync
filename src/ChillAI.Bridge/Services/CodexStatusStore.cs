@@ -12,7 +12,7 @@ public sealed class CodexStatusStore
     public const double JustDoneLifetimeSeconds = 15;
 
     /// <summary>Working 状态下若超过该时长没有任何事件，判定为 Waiting（兜底防卡死，秒）。</summary>
-    public const double WorkingStaleSeconds = 600;
+    public const double WorkingStaleSeconds = 120;
 
     /// <summary>事件历史保留条数。</summary>
     public const int HistoryCapacity = 50;

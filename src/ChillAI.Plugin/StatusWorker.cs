@@ -192,9 +192,9 @@ namespace ChillAI.Plugin
                 CurrentCodexState = snap.State;
             }
 
-            // 强制校正兜底：每 2 秒把女主角拉回 Codex 期望状态，
+            // 强制校正兜底：每 2 秒把女主角拉回工具期望状态（Codex/ZCode 任一事件进 Bridge 都会更新），
             // 覆盖游戏番茄钟通过任何内部路径改掉的状态
-            if (Plugin.CodexPrimary != null && Plugin.CodexPrimary.Value
+            if (Plugin.ToolPrimary != null && Plugin.ToolPrimary.Value
                 && Time.unscaledTime - _lastReassertTime >= 2f)
             {
                 _lastReassertTime = Time.unscaledTime;
@@ -252,9 +252,9 @@ namespace ChillAI.Plugin
             switch (_selectedRow)
             {
                 case 0: Toggle(ref Plugin.EnableCodex, "Codex 联动"); break;
-                case 1: Toggle(ref Plugin.CodexPrimary, "以 Codex 为主"); break;
-                case 2: Toggle(ref Plugin.ShowOverlay, "状态浮窗"); break;
-                case 3: Toggle(ref Plugin.EnableZcode, "ZCode 联动"); break;
+                case 1: Toggle(ref Plugin.EnableZcode, "ZCode 联动"); break;
+                case 2: Toggle(ref Plugin.ToolPrimary, "工具优先"); break;
+                case 3: Toggle(ref Plugin.ShowOverlay, "状态浮窗"); break;
             }
         }
 
@@ -393,9 +393,9 @@ namespace ChillAI.Plugin
             GUI.Label(new Rect(WindowRect.x + 12, WindowRect.y + 42, 320, 24), statusText, statusStyle);
 
             DrawToggleRow(0, "启用 Codex 联动", Plugin.EnableCodex?.Value ?? true);
-            DrawToggleRow(1, "以 Codex 为主（覆盖番茄钟）", Plugin.CodexPrimary?.Value ?? true);
-            DrawToggleRow(2, "显示状态浮窗", Plugin.ShowOverlay?.Value ?? true);
-            DrawToggleRow(3, "启用 ZCode 联动（写 ~/.zcode hooks）", Plugin.EnableZcode?.Value ?? true);
+            DrawToggleRow(1, "启用 ZCode 联动", Plugin.EnableZcode?.Value ?? true);
+            DrawToggleRow(2, "工具优先（覆盖番茄钟）", Plugin.ToolPrimary?.Value ?? true);
+            DrawToggleRow(3, "显示状态浮窗", Plugin.ShowOverlay?.Value ?? true);
 
             var hintStyle = new GUIStyle(GUI.skin.label) { fontSize = 12 };
             hintStyle.normal.textColor = new Color(0.5f, 0.5f, 0.5f);

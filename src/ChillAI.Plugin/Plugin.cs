@@ -15,7 +15,7 @@ namespace ChillAI.Plugin
     {
         public const string PluginGuid = "com.haikisha.chillai";
         public const string PluginName = "Chill AI";
-        public const string PluginVersion = "1.0.3";
+        public const string PluginVersion = "1.0.4";
 
         /// <summary>供 Worker 组件复用的 BepInEx 日志器。</summary>
         public static ManualLogSource StaticLogger;
@@ -23,27 +23,27 @@ namespace ChillAI.Plugin
         /// <summary>启用 Codex 联动（总开关）。</summary>
         public static ConfigEntry<bool> EnableCodex;
 
-        /// <summary>以 Codex 为主（覆盖番茄钟自动动作）。</summary>
-        public static ConfigEntry<bool> CodexPrimary;
+        /// <summary>工具优先：任一已启用工具（Codex/ZCode）的状态优先，覆盖番茄钟自动动作。</summary>
+        public static ConfigEntry<bool> ToolPrimary;
 
         /// <summary>显示状态浮窗。</summary>
         public static ConfigEntry<bool> ShowOverlay;
 
-        /// <summary>启用 ZCode 联动（写入 ~/.zcode/hooks.json，需 ZCode 支持 Codex 式 Hooks）。</summary>
+        /// <summary>启用 ZCode 联动（写入 ~/.zcode/cli/config.json，Claude Code hook schema）。</summary>
         public static ConfigEntry<bool> EnableZcode;
 
-        /// <summary>自动写入 ~/.codex/hooks.json（路径指向插件目录，跨机器通用）。</summary>
+        /// <summary>自动写入 AI 工具钩子配置（~/.codex/hooks.json + ~/.zcode/cli/config.json，路径指向插件目录，跨机器通用）。</summary>
         public static ConfigEntry<bool> AutoInstallHooks;
 
         private void Awake()
         {
             StaticLogger = Logger;
             EnableCodex = Config.Bind("General", "EnableCodex", true, "启用 Codex 联动（总开关）");
-            CodexPrimary = Config.Bind("General", "CodexPrimary", true, "以 Codex 状态为主：覆盖游戏番茄钟对女主角的自动动作");
-            ShowOverlay = Config.Bind("General", "ShowOverlay", true, "显示 Codex 状态浮窗");
-            EnableZcode = Config.Bind("General", "EnableZcode", true, "启用 ZCode 联动：向 ~/.zcode 写入 Codex 格式 hooks.json（需 ZCode 支持该规范）");
-            AutoInstallHooks = Config.Bind("General", "AutoInstallHooks", true, "自动写入 ~/.codex/hooks.json（指向插件目录内的 codex-hook.ps1）");
-            Logger.LogInfo($"{PluginName} {PluginVersion} loaded (EnableCodex={EnableCodex.Value}, CodexPrimary={CodexPrimary.Value}, EnableZcode={EnableZcode.Value})");
+            EnableZcode = Config.Bind("General", "EnableZcode", true, "启用 ZCode 联动：向 ~/.zcode/cli/config.json 写入 Claude Code 格式 hooks");
+            ToolPrimary = Config.Bind("General", "ToolPrimary", true, "工具优先：已启用工具（Codex/ZCode）的状态优先，覆盖游戏番茄钟对女主角的自动动作");
+            ShowOverlay = Config.Bind("General", "ShowOverlay", true, "显示状态浮窗");
+            AutoInstallHooks = Config.Bind("General", "AutoInstallHooks", true, "自动写入 AI 工具钩子配置（指向插件目录内的 codex-hook.ps1）");
+            Logger.LogInfo($"{PluginName} {PluginVersion} loaded (EnableCodex={EnableCodex.Value}, EnableZcode={EnableZcode.Value}, ToolPrimary={ToolPrimary.Value})");
 
             if (AutoInstallHooks.Value)
             {

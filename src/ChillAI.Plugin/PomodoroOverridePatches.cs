@@ -4,12 +4,12 @@ using UnityEngine;
 namespace ChillAI.Plugin
 {
     /// <summary>
-    /// 以 Codex 为主模式：拦截游戏番茄钟对女主角的自动动作驱动。
+    /// 工具优先模式：拦截游戏番茄钟对女主角的自动动作驱动。
     /// ★ 真实链路（IL 反编译确认）：PomodoroService.OnTimerEnd/StartPomodoro
     ///   → HeroineService.StartPomodoroTimer/OnPomodoroWorkEnd/OnPomodoroBreakTimeEnd/OnPomodoroComplete
     ///   → HeroineAI.ChangePomodoroActionAsync() ← 番茄钟动作的唯一汇聚入口
     /// 旧的 ReadyChangePomodoroState/StartWork/StartBreak 在程序集内无调用点，保留作兜底。
-    /// 所有拦截受 EnableCodex 与 CodexPrimary 双重控制。
+    /// 拦截受 ToolPrimary（工具优先）与任一工具启用（Codex/ZCode）双重控制。
     /// </summary>
     public static class PomodoroOverridePatches
     {
@@ -17,7 +17,13 @@ namespace ChillAI.Plugin
 
         private static bool Enabled()
         {
-            return (Plugin.EnableCodex?.Value ?? true) && (Plugin.CodexPrimary?.Value ?? true);
+            // 工具优先开启 且 至少一个工具（Codex/ZCode）启用 → 拦截番茄钟自动动作。
+            // 任一工具的事件都进 Bridge 更新 CurrentCodexState，女主统一跟随工具状态。
+            if (!(Plugin.ToolPrimary?.Value ?? true))
+            {
+                return false;
+            }
+            return (Plugin.EnableCodex?.Value ?? false) || (Plugin.EnableZcode?.Value ?? false);
         }
 
         private static void ThrottledLog(string message)
@@ -30,7 +36,7 @@ namespace ChillAI.Plugin
             Plugin.StaticLogger?.LogInfo("[ChillAI] " + message);
         }
 
-        /// <summary>番茄钟动作的真正入口：开始/切换工作/休息/完成全部汇聚于此。以 Codex 为主时一律拦截，女主状态改由 Codex 驱动（Reassert 每 2s 校正）。</summary>
+        /// <summary>番茄钟动作的真正入口：开始/切换工作/休息/完成全部汇聚于此。工具优先时一律拦截，女主状态改由工具状态驱动（Reassert 每 2s 校正）。</summary>
         [HarmonyPatch(typeof(HeroineAI), nameof(HeroineAI.ChangePomodoroActionAsync))]
         public static class ChangePomodoroActionPatch
         {
@@ -41,7 +47,7 @@ namespace ChillAI.Plugin
                 {
                     return true;
                 }
-                ThrottledLog("拦截番茄钟自动动作（以 Codex 为主，女主状态由 Codex 驱动）");
+                ThrottledLog("拦截番茄钟自动动作（工具优先，女主状态由工具状态驱动）");
                 return false;
             }
         }
