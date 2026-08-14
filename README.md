@@ -66,7 +66,9 @@ dotnet publish src/ChillAI.Bridge/ChillAI.Bridge.csproj -c Release -r win-x64 --
 
 ## 兼容性说明
 
-当前实现基于 **Codex Hooks 规范**（`~/.codex/hooks.json`，6 类标准事件）。该规范目前由 Codex（ChatGPT 桌面应用 / CLI）实现；**是否支持其他 AI 工具的钩子，取决于目标工具是否实现同一 Hooks 规范**，不能保证一套配置通用于所有工具。详见 [docs/CODEX_STATUS.md](docs/CODEX_STATUS.md) 的兼容性小节。
+当前实现基于 **Codex Hooks 规范**（`~/.codex/hooks.json`，6 类标准事件）。插件启动时会**自动探测并写入多个 AI 工具主目录**（`~/.codex`、`~/.zcode`，目录存在即写），并对已有 `config.toml` 的目录确保 `codex_hooks = true` 开关。
+
+能否真正联动，取决于目标工具是否**实现 Codex Hooks 规范**：Codex（ChatGPT 桌面应用 / CLI）原生支持；独立配置体系的工具（如智谱 zai/glm 生态的 ZCode，配置在 `~/.zcode/v2/config.json`）目前不读取 Codex 格式的 `hooks.json`，需要工具官方支持该规范后才能联动。详见 [docs/CODEX_STATUS.md](docs/CODEX_STATUS.md) 的兼容性小节。
 
 ## 许可
 
