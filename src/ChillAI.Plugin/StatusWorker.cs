@@ -75,7 +75,6 @@ namespace ChillAI.Plugin
         private bool _configWindowOpen;
         private int _selectedRow;
         private float _lastHeartbeatTime;
-        private float _lastReassertTime;
         private int _lastTickedFrame = -1;
 
         private static IntPtr _gameHwnd;
@@ -194,14 +193,9 @@ namespace ChillAI.Plugin
                 CurrentCodexState = snap.State;
             }
 
-            // 强制校正兜底：每 2 秒把女主角拉回工具期望状态（Codex/ZCode 任一事件进 Bridge 都会更新），
-            // 覆盖游戏番茄钟通过任何内部路径改掉的状态
-            if (Plugin.ToolPrimary != null && Plugin.ToolPrimary.Value
-                && Time.unscaledTime - _lastReassertTime >= 2f)
-            {
-                _lastReassertTime = Time.unscaledTime;
-                HeroineDriver.Reassert();
-            }
+            // 注：不再每 2 秒强制校正女主状态——番茄钟动作主入口已由
+            // PomodoroOverridePatches 拦截，女主改为纯事件驱动（状态变化才驱动一次），
+            // 避免"工具空闲时被反复拉去喝茶/强行触发动作"的不自然表现。
         }
 
         private void HandleWindowInput()

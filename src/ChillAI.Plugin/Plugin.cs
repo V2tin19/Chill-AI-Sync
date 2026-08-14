@@ -15,7 +15,7 @@ namespace ChillAI.Plugin
     {
         public const string PluginGuid = "com.haikisha.chillai";
         public const string PluginName = "Chill AI";
-        public const string PluginVersion = "1.0.5";
+        public const string PluginVersion = "1.0.6";
 
         /// <summary>供 Worker 组件复用的 BepInEx 日志器。</summary>
         public static ManualLogSource StaticLogger;

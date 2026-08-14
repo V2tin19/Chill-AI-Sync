@@ -116,5 +116,60 @@ namespace ChillAI.Plugin
                 return false;
             }
         }
+
+        // ---------------- 自言自语禁止 ----------------
+
+        private static Bulbul.PomodoroService _pomodoroService;
+
+        /// <summary>番茄钟实例捕获：PomodoroService 是普通类（DI 创建），番茄钟启动/切换必调 PlayPomodoroTimer（私有），从这里拿实例。</summary>
+        [HarmonyPatch(typeof(Bulbul.PomodoroService), "PlayPomodoroTimer")]
+        public static class PomodoroInstanceCapturePatch
+        {
+            [HarmonyPostfix]
+            private static void Postfix(Bulbul.PomodoroService __instance)
+            {
+                _pomodoroService = __instance;
+            }
+        }
+
+        /// <summary>番茄钟是否运行中（实时查询实例，暂停/停止自动为 false）。</summary>
+        private static bool IsPomodoroRunning()
+        {
+            if (_pomodoroService == null)
+            {
+                return false;
+            }
+            try
+            {
+                return _pomodoroService.IsTimerRunning();
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 番茄钟运行中禁止女主自言自语：拦截抽签入口 UpdateLottery。
+        /// 抽签不执行 → 女主不会自动开口说话（番茄钟专注场景）。
+        /// </summary>
+        [HarmonyPatch(typeof(HeroineSelfTalkController), nameof(HeroineSelfTalkController.UpdateLottery))]
+        public static class SelfTalkPatch
+        {
+            [HarmonyPrefix]
+            private static bool Prefix()
+            {
+                if (!Enabled())
+                {
+                    return true;
+                }
+                if (!IsPomodoroRunning())
+                {
+                    return true;
+                }
+                ThrottledLog("禁止自言自语（番茄钟运行中）");
+                return false;
+            }
+        }
     }
 }
