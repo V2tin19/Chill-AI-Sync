@@ -44,17 +44,13 @@ namespace ChillAI.Plugin
         }
 
         /// <summary>
-        /// 强制校正：不管游戏内部（番茄钟等）把她改成了什么状态，
-        /// 只要和 Codex 期望状态不一致就拉回来。每 ~2 秒由 StatusWorker 调用一次。
+        /// 温和校正（每 ~4 秒由 StatusWorker 调用）：
+        /// - 工具 working → 女主必须处于工作状态（WorkPC），防止被番茄钟/游戏内部漂移；
+        /// - 工具非工作（waiting/idle/unknown/justdone/waitingreview）→ 女主若在"干活"（Work*）则拉回默认 None（停手、回到自然状态）。
+        ///   不做"强制喝茶/强制动作"——女主不在工作状态时保持原样。
         /// </summary>
         public static void Reassert()
         {
-            var target = Map(StatusWorker.CurrentCodexState);
-            if (target == null)
-            {
-                return;
-            }
-
             var heroine = GetHeroine();
             if (heroine == null)
             {
@@ -63,17 +59,29 @@ namespace ChillAI.Plugin
 
             try
             {
-                if (heroine.GetCurrentState() == target.Value)
+                var current = heroine.GetCurrentState();
+                if (StatusWorker.CurrentCodexState == "working")
                 {
+                    if (current != HeroineAI.ActionStateType.WorkPC)
+                    {
+                        heroine.DebugChangeState(HeroineAI.ActionStateType.WorkPC);
+                        Debug.Log("[ChillAI] 校正女主角 -> 工作（工具 working）");
+                    }
                     return;
                 }
 
-                heroine.DebugChangeState(target.Value);
-                Debug.Log($"[ChillAI] 强制校正女主角状态 -> {target.Value}（覆盖游戏内部动作）");
+                // 工具不工作：女主若在干活 → 拉回默认（None），只"停手"，不指定动作
+                if (current == HeroineAI.ActionStateType.WorkPC
+                    || current == HeroineAI.ActionStateType.WorkBook
+                    || current == HeroineAI.ActionStateType.WorkReport)
+                {
+                    heroine.DebugChangeState(HeroineAI.ActionStateType.None);
+                    Debug.Log("[ChillAI] 校正女主角 -> 默认（工具空闲，停止干活）");
+                }
             }
             catch (System.Exception ex)
             {
-                Debug.Log("[ChillAI] 强制校正失败: " + ex.Message);
+                Debug.Log("[ChillAI] 温和校正失败: " + ex.Message);
             }
         }
 
@@ -81,11 +89,11 @@ namespace ChillAI.Plugin
         {
             switch (codexState)
             {
-                case "working": return HeroineAI.ActionStateType.WorkPC;          // Codex 干活 → 她在电脑前工作
-                case "waiting": return HeroineAI.ActionStateType.BreakTeaTime;    // 休息 → 喝茶
+                case "working": return HeroineAI.ActionStateType.WorkPC;          // 工具干活 → 她在电脑前工作
+                case "waiting": return HeroineAI.ActionStateType.None;            // 休息 → 回默认自然状态（不再强制喝茶）
                 case "justdone": return HeroineAI.ActionStateType.WildStretchFullBody; // 刚完成 → 伸展庆祝
                 case "waitingreview": return HeroineAI.ActionStateType.WantTalk;  // 等你审批 → 想找你说话
-                case "idle": return HeroineAI.ActionStateType.WorkPC;             // 空闲 → 默认陪伴工作
+                case "idle": return HeroineAI.ActionStateType.None;               // 空闲 → 回默认自然状态（不工作）
                 default: return null;
             }
         }
