@@ -1,0 +1,11 @@
+# Build artifacts
+bin/
+obj/
+
+# Release staging (assets live on GitHub Releases only)
+.release/
+
+# IDE
+.vs/
+*.user
+*.suo

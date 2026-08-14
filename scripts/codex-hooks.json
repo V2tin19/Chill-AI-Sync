@@ -1,0 +1,70 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"D:\\gitstuff\\Chill_with_AI\\scripts\\codex-hook.ps1\" -EventName SessionStart",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"D:\\gitstuff\\Chill_with_AI\\scripts\\codex-hook.ps1\" -EventName UserPromptSubmit",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"D:\\gitstuff\\Chill_with_AI\\scripts\\codex-hook.ps1\" -EventName PostToolUse",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"D:\\gitstuff\\Chill_with_AI\\scripts\\codex-hook.ps1\" -EventName PermissionRequest",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"D:\\gitstuff\\Chill_with_AI\\scripts\\codex-hook.ps1\" -EventName Stop",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"D:\\gitstuff\\Chill_with_AI\\scripts\\codex-hook.ps1\" -EventName SessionEnd",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}
