@@ -82,12 +82,13 @@ namespace ChillAI.Plugin
         private static int _hwndFindFrame = -1;
 
         // 配置窗口布局（IMGUI 屏幕坐标，左上原点）
-        private static readonly Rect WindowRect = new Rect(20, 20, 360, 200);
+        private static readonly Rect WindowRect = new Rect(20, 20, 360, 226);
         private static readonly Rect[] RowRects =
         {
             new Rect(28, 82, 344, 30),
             new Rect(28, 116, 344, 30),
             new Rect(28, 150, 344, 30),
+            new Rect(28, 184, 344, 30),
         };
 
         private void Log(string message)
@@ -208,12 +209,12 @@ namespace ChillAI.Plugin
             bool down = (GetAsyncKeyState(VK_DOWN) & 0x8000) != 0;
             if (up && !_upWasDown)
             {
-                _selectedRow = (_selectedRow + 2) % 3;
+                _selectedRow = (_selectedRow + 3) % 4;
                 Log("选择行 " + (_selectedRow + 1));
             }
             if (down && !_downWasDown)
             {
-                _selectedRow = (_selectedRow + 1) % 3;
+                _selectedRow = (_selectedRow + 1) % 4;
                 Log("选择行 " + (_selectedRow + 1));
             }
             _upWasDown = up;
@@ -253,6 +254,7 @@ namespace ChillAI.Plugin
                 case 0: Toggle(ref Plugin.EnableCodex, "Codex 联动"); break;
                 case 1: Toggle(ref Plugin.CodexPrimary, "以 Codex 为主"); break;
                 case 2: Toggle(ref Plugin.ShowOverlay, "状态浮窗"); break;
+                case 3: Toggle(ref Plugin.EnableZcode, "ZCode 联动"); break;
             }
         }
 
@@ -393,10 +395,11 @@ namespace ChillAI.Plugin
             DrawToggleRow(0, "启用 Codex 联动", Plugin.EnableCodex?.Value ?? true);
             DrawToggleRow(1, "以 Codex 为主（覆盖番茄钟）", Plugin.CodexPrimary?.Value ?? true);
             DrawToggleRow(2, "显示状态浮窗", Plugin.ShowOverlay?.Value ?? true);
+            DrawToggleRow(3, "启用 ZCode 联动（写 ~/.zcode hooks）", Plugin.EnableZcode?.Value ?? true);
 
             var hintStyle = new GUIStyle(GUI.skin.label) { fontSize = 12 };
             hintStyle.normal.textColor = new Color(0.5f, 0.5f, 0.5f);
-            GUI.Label(new Rect(WindowRect.x + 12, WindowRect.y + 182, 340, 20), "↑↓ 选择 · Enter/空格 切换 · F8 关闭", hintStyle);
+            GUI.Label(new Rect(WindowRect.x + 12, WindowRect.y + 208, 340, 20), "↑↓ 选择 · Enter/空格 切换 · F8 关闭", hintStyle);
         }
 
         private void DrawToggleRow(int index, string label, bool value)

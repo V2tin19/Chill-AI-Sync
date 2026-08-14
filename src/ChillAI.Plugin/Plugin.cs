@@ -15,7 +15,7 @@ namespace ChillAI.Plugin
     {
         public const string PluginGuid = "com.haikisha.chillai";
         public const string PluginName = "Chill AI";
-        public const string PluginVersion = "1.0.1";
+        public const string PluginVersion = "1.0.2";
 
         /// <summary>供 Worker 组件复用的 BepInEx 日志器。</summary>
         public static ManualLogSource StaticLogger;
@@ -29,6 +29,9 @@ namespace ChillAI.Plugin
         /// <summary>显示状态浮窗。</summary>
         public static ConfigEntry<bool> ShowOverlay;
 
+        /// <summary>启用 ZCode 联动（写入 ~/.zcode/hooks.json，需 ZCode 支持 Codex 式 Hooks）。</summary>
+        public static ConfigEntry<bool> EnableZcode;
+
         /// <summary>自动写入 ~/.codex/hooks.json（路径指向插件目录，跨机器通用）。</summary>
         public static ConfigEntry<bool> AutoInstallHooks;
 
@@ -38,8 +41,9 @@ namespace ChillAI.Plugin
             EnableCodex = Config.Bind("General", "EnableCodex", true, "启用 Codex 联动（总开关）");
             CodexPrimary = Config.Bind("General", "CodexPrimary", true, "以 Codex 状态为主：覆盖游戏番茄钟对女主角的自动动作");
             ShowOverlay = Config.Bind("General", "ShowOverlay", true, "显示 Codex 状态浮窗");
+            EnableZcode = Config.Bind("General", "EnableZcode", true, "启用 ZCode 联动：向 ~/.zcode 写入 Codex 格式 hooks.json（需 ZCode 支持该规范）");
             AutoInstallHooks = Config.Bind("General", "AutoInstallHooks", true, "自动写入 ~/.codex/hooks.json（指向插件目录内的 codex-hook.ps1）");
-            Logger.LogInfo($"{PluginName} {PluginVersion} loaded (EnableCodex={EnableCodex.Value}, CodexPrimary={CodexPrimary.Value})");
+            Logger.LogInfo($"{PluginName} {PluginVersion} loaded (EnableCodex={EnableCodex.Value}, CodexPrimary={CodexPrimary.Value}, EnableZcode={EnableZcode.Value})");
 
             if (AutoInstallHooks.Value)
             {

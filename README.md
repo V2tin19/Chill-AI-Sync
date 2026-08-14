@@ -1,4 +1,4 @@
-# Chill AI: Heroine Sync
+# Chill AI: Agent Sync
 
 把 **AI 工具（Agent）的真实工作状态** 同步到《Chill with You: Lo-Fi Story》游戏里——Agent 干活时女主角安静工作，Agent 休息时她喝茶看书，任务完成她会伸懒腰庆祝。
 

@@ -5,8 +5,11 @@ namespace ChillAI.Plugin
 {
     /// <summary>
     /// 以 Codex 为主模式：拦截游戏番茄钟对女主角的自动动作驱动。
-    /// 真正入口是 HeroineAI.ReadyChangePomodoroState（番茄钟专用状态切换，私有）；
-    /// StartWork/StartBreak 作为补充兜底。所有拦截受 EnableCodex 与 CodexPrimary 双重控制。
+    /// ★ 真实链路（IL 反编译确认）：PomodoroService.OnTimerEnd/StartPomodoro
+    ///   → HeroineService.StartPomodoroTimer/OnPomodoroWorkEnd/OnPomodoroBreakTimeEnd/OnPomodoroComplete
+    ///   → HeroineAI.ChangePomodoroActionAsync() ← 番茄钟动作的唯一汇聚入口
+    /// 旧的 ReadyChangePomodoroState/StartWork/StartBreak 在程序集内无调用点，保留作兜底。
+    /// 所有拦截受 EnableCodex 与 CodexPrimary 双重控制。
     /// </summary>
     public static class PomodoroOverridePatches
     {
@@ -27,7 +30,23 @@ namespace ChillAI.Plugin
             Plugin.StaticLogger?.LogInfo("[ChillAI] " + message);
         }
 
-        /// <summary>番茄钟状态切换的真正入口（私有方法）。</summary>
+        /// <summary>番茄钟动作的真正入口：开始/切换工作/休息/完成全部汇聚于此。以 Codex 为主时一律拦截，女主状态改由 Codex 驱动（Reassert 每 2s 校正）。</summary>
+        [HarmonyPatch(typeof(HeroineAI), nameof(HeroineAI.ChangePomodoroActionAsync))]
+        public static class ChangePomodoroActionPatch
+        {
+            [HarmonyPrefix]
+            private static bool Prefix()
+            {
+                if (!Enabled())
+                {
+                    return true;
+                }
+                ThrottledLog("拦截番茄钟自动动作（以 Codex 为主，女主状态由 Codex 驱动）");
+                return false;
+            }
+        }
+
+        /// <summary>番茄钟状态切换的真正入口（私有方法，IL 确认无调用点，保留兜底）。</summary>
         [HarmonyPatch(typeof(HeroineAI), "ReadyChangePomodoroState")]
         public static class ReadyChangePomodoroStatePatch
         {

@@ -128,12 +128,16 @@ namespace ChillAI.Plugin
             }
         }
 
-        /// <summary>存在的 AI 工具主目录（~/.codex、~/.zcode …）。</summary>
+        /// <summary>存在的 AI 工具主目录（~/.codex 始终、~/.zcode 受 EnableZcode 开关控制）。</summary>
         private static IEnumerable<string> CandidateHomes()
         {
             var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             foreach (var dir in AiHomeDirs)
             {
+                if (dir == ".zcode" && !(Plugin.EnableZcode?.Value ?? true))
+                {
+                    continue; // ZCode 联动被关闭时不写
+                }
                 var home = Path.Combine(profile, dir);
                 if (Directory.Exists(home))
                 {
