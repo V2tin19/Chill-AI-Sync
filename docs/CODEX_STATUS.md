@@ -128,8 +128,8 @@ Invoke-RestMethod http://127.0.0.1:17860/codex/status
 
 ## 与其他 AI 工具的兼容性
 
-本通道基于 **Codex Hooks 规范**：`~/.codex/hooks.json`（6 类标准事件：SessionStart / UserPromptSubmit / PostToolUse / PermissionRequest / Stop / SessionEnd）+ `config.toml` 的 `[features] codex_hooks = true`。
+本通道基于 **Codex Hooks 规范**：`~/.codex/hooks.json`（6 类标准事件：SessionStart / UserPromptSubmit / PostToolUse / PermissionRequest / Stop / SessionEnd）+ `config.toml` 的 `[features] codex_hooks = true`。转发脚本 `codex-hook.ps1` 只依赖「事件名 → HTTP POST」这一个事实，因此事件名相同的工具都能复用。
 
-- **能复用同一套钩子配置的工具**：实现了该规范的工具（Codex CLI、ChatGPT 桌面应用，以及明确声明兼容 Codex Hooks 的分支/发行版）。对这类工具，把 `hooks.json` 写到它的主目录即可，格式完全一致。
-- **不能保证通用的工具**：独立实现自己配置体系的 AI 工具（如智谱 zai/glm 生态的 ZCode，配置在 `~/.zcode/v2/config.json`，无 Codex 式 hooks 机制），写入 Codex 格式的 `hooks.json` 不会被读取，需要工具官方支持对应规范后才能联动。
-- **判断方法**：看目标工具的主目录（`~/.<工具名>`）是否存在 `config.toml` + `hooks.json` 结构；不存在即未实现该规范。
+- **Codex（ChatGPT 桌面应用 / CLI）**：`~/.codex/hooks.json`，6 事件，`type:"command"` 单命令字符串。插件自动写入。
+- **ZCode（智谱 z.ai 的 GLM 桌面编码 Agent）**：**有自己的原生 hooks 机制**（官方文档 zcode.z.ai/docs/hooks），配置在 `~/.zcode/cli/config.json`，采用 **Claude Code hook schema**：`events` + `matcher` + `type:"process"`（command 与 args 分开、不经 shell 直接 argv 执行），事件名 SessionStart / UserPromptSubmit / PostToolUse / PermissionRequest / Stop 与 Codex 一致，但**没有 SessionEnd**。插件按该格式单独写入（合并保留用户已有 hooks，受 F8「启用 ZCode 联动」开关控制），转发脚本仍复用 `codex-hook.ps1`。
+- **判断方法**：查目标工具的官方文档确认其 hooks 配置文件与 schema（Codex 式 `hooks.json` / Claude Code 式 `cli/config.json` / 其他），再按对应格式写入；不能假设"一套配置通吃"。

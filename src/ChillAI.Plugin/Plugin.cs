@@ -47,8 +47,9 @@ namespace ChillAI.Plugin
 
             if (AutoInstallHooks.Value)
             {
-                HooksInstaller.EnsureHooksJson();
-                HooksInstaller.EnsureConfigFeatures();
+                HooksInstaller.EnsureHooksJson();      // Codex: ~/.codex/hooks.json
+                HooksInstaller.EnsureZcodeHooks();     // ZCode: ~/.zcode/cli/config.json（受 EnableZcode 控制）
+                HooksInstaller.EnsureConfigFeatures(); // Codex: ~/.codex/config.toml
             }
 
             var harmony = new Harmony(PluginGuid);

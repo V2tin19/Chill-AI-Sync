@@ -66,9 +66,12 @@ dotnet publish src/ChillAI.Bridge/ChillAI.Bridge.csproj -c Release -r win-x64 --
 
 ## 兼容性说明
 
-当前实现基于 **Codex Hooks 规范**（`~/.codex/hooks.json`，6 类标准事件）。插件启动时会**自动探测并写入多个 AI 工具主目录**（`~/.codex`、`~/.zcode`，目录存在即写），并对已有 `config.toml` 的目录确保 `codex_hooks = true` 开关。
+当前实现基于 **Codex Hooks 规范**（`~/.codex/hooks.json`，6 类标准事件）。插件启动时会自动配置多个 AI 工具：
 
-能否真正联动，取决于目标工具是否**实现 Codex Hooks 规范**：Codex（ChatGPT 桌面应用 / CLI）原生支持；独立配置体系的工具（如智谱 zai/glm 生态的 ZCode，配置在 `~/.zcode/v2/config.json`）目前不读取 Codex 格式的 `hooks.json`，需要工具官方支持该规范后才能联动。详见 [docs/CODEX_STATUS.md](docs/CODEX_STATUS.md) 的兼容性小节。
+- **Codex**：写入 `~/.codex/hooks.json`（6 事件）+ 确保 `config.toml` 的 `codex_hooks = true`
+- **ZCode**（智谱 z.ai 的 GLM 桌面编码 Agent）：写入 `~/.zcode/cli/config.json`（Claude Code hook schema，`type:"process"` 执行器，5 事件，复用同一转发脚本；受 F8「启用 ZCode 联动」开关控制，合并保留已有配置）
+
+各工具 hooks 的配置路径与 schema 不同，不能假设"一套配置通吃"；转发脚本只需事件名一致即可复用。详见 [docs/CODEX_STATUS.md](docs/CODEX_STATUS.md) 的兼容性小节。
 
 ## 许可
 
