@@ -346,20 +346,21 @@ namespace ChillAI.Plugin
             };
 
             string display;
-            if (Plugin.EnableCodex != null && !Plugin.EnableCodex.Value)
+            bool anyToolOn = (Plugin.EnableCodex?.Value ?? false) || (Plugin.EnableZcode?.Value ?? false);
+            if (!anyToolOn)
             {
-                display = "Codex 联动已关闭（F8 打开设置）";
+                display = "工具联动已关闭（F8 打开设置）";
             }
             else if (snap != null && snap.Connected)
             {
-                display = "Codex: " + StateToChinese(snap.State)
+                display = "工具: " + StateToChinese(snap.State)
                           + "\n事件: " + (string.IsNullOrEmpty(snap.LastEvent) ? "-" : snap.LastEvent)
                           + "  | 距今 " + snap.SecondsSinceLastEvent + "s"
                           + (string.IsNullOrEmpty(snap.Detail) ? "" : "\n" + Truncate(snap.Detail, 44));
             }
             else
             {
-                display = "Codex: Bridge 未连接\n" + (snap == null ? "" : Truncate(snap.Error, 44));
+                display = "工具: Bridge 未连接\n" + (snap == null ? "" : Truncate(snap.Error, 44));
             }
 
             style.normal.textColor = StateColor(snap);
@@ -387,7 +388,7 @@ namespace ChillAI.Plugin
             string statusText = "状态: 未连接";
             if (snap != null && snap.Connected)
             {
-                statusText = "Codex: " + StateToChinese(snap.State) + "  | 距今 " + snap.SecondsSinceLastEvent + "s";
+                statusText = "工具: " + StateToChinese(snap.State) + "  | 距今 " + snap.SecondsSinceLastEvent + "s";
             }
             statusStyle.normal.textColor = StateColor(snap);
             GUI.Label(new Rect(WindowRect.x + 12, WindowRect.y + 42, 320, 24), statusText, statusStyle);

@@ -65,8 +65,9 @@
 
 | 开关 | 说明 |
 |---|---|
-| 启用 Codex 联动 | 总开关。关闭后插件完全不干预游戏 |
-| 以 Codex 为主（覆盖番茄钟） | 开：女主角状态完全由 Codex 决定，游戏番茄钟的自动动作会被覆盖（**动作抽风属正常现象**）；关：恢复游戏原生番茄钟驱动 |
+| 启用 Codex 联动 | 接入 Codex（ChatGPT）钩子事件 |
+| 启用 ZCode 联动 | 接入 ZCode（z.ai GLM）钩子事件（写 `~/.zcode/cli/config.json`，Claude Code hook schema） |
+| 工具优先（覆盖番茄钟） | 开：女主角状态完全由已启用工具（Codex/ZCode 任一）决定，游戏番茄钟的自动动作会被覆盖（**动作抽风属正常现象**）；关：恢复游戏原生番茄钟驱动 |
 | 显示状态浮窗 | 左上角状态浮窗显示/隐藏 |
 
 设置自动保存在 `BepInEx\config\Chill.AI.cfg`，重启游戏后保留。
@@ -77,11 +78,11 @@
 
 | 浮窗显示 | 含义 | 女主角行为 |
 |---|---|---|
-| 正在工作 | Codex 执行任务中 | 电脑前工作 |
-| 刚完成任务 | Codex 刚结束一轮 | 伸懒腰庆祝 |
-| 休息 / 待命中 | Codex 等你输入 | 喝茶休息 |
-| 等待审批 | Codex 请求权限 | 想找你说话 |
-| 空闲 | Codex 无会话 | 电脑前陪伴 |
+| 正在工作 | 工具执行任务中 | 电脑前工作 |
+| 刚完成任务 | 工具刚结束一轮 | 伸懒腰庆祝 |
+| 休息 / 待命中 | 工具等你输入 | 喝茶休息 |
+| 等待审批 | 工具请求权限 | 想找你说话 |
+| 空闲 | 工具无会话 | 电脑前陪伴 |
 
 ---
 
@@ -90,9 +91,9 @@
 | 现象 | 原因与处理 |
 |---|---|
 | 浮窗显示"Bridge 未连接" | Bridge 没起来：确认插件目录里有 `ChillAI.Bridge.exe`；或手动运行它看报错 |
-| 状态一直是 unknown | Codex 钩子没触发：检查 App/CLI 的**钩子信任**是否批准（最常见）；确认 Codex 设置里 Hooks 开关打开；`~/.codex/hooks.json` 若被手动改坏，删掉后重启游戏让插件重写即可 |
+| 状态一直是 unknown | 工具钩子没触发：检查工具 App/CLI 的**钩子信任**是否批准（最常见）；确认 Hooks 开关打开；Codex 侧 `~/.codex/hooks.json`、ZCode 侧 `~/.zcode/cli/config.json` 若被手动改坏，删掉后重启游戏让插件重写即可 |
 | 浮窗一直不出现 | 游戏内按 F8 检查"显示状态浮窗"是否开启 |
-| 女主角不动 | 检查"启用 Codex 联动"和"以 Codex 为主"是否开启；看 `BepInEx\LogOutput.log` 里 `[ChillAI]` 日志 |
+| 女主角不动 | 检查"工具优先"和至少一个工具联动（Codex/ZCode）是否开启；看 `BepInEx\LogOutput.log` 里 `[ChillAI]` 日志 |
 | 钩子被 Codex 清掉 | 桌面 App 会用内部状态重写 config.toml——用 App 设置界面的 Hooks 开关（它自己持久化），不要只改 config.toml。插件每次启动会重新确保 `codex_hooks = true`（CLI 通道） |
 | `clamping ... timeout` 警告 | 无害，转发脚本足够快，可忽略 |
 
