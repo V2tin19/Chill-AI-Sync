@@ -162,8 +162,10 @@ namespace ChillAI.Plugin
                 HandleWindowInput();
             }
 
-            // 总开关：关闭时停止轮询与驱动
-            if (Plugin.EnableCodex != null && !Plugin.EnableCodex.Value)
+            // 总开关：任一工具（Codex/ZCode）启用才轮询与驱动。
+            // 只认 Codex 会漏掉"仅 ZCode"场景——Codex 关着时整个插件停摆（历史 bug）。
+            bool anyToolOn = (Plugin.EnableCodex?.Value ?? false) || (Plugin.EnableZcode?.Value ?? false);
+            if (!anyToolOn)
             {
                 return;
             }
