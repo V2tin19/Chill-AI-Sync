@@ -28,6 +28,7 @@ namespace ChillAI.Plugin
         private readonly object _lock = new object();
         private Snapshot _current = new Snapshot();
         private float _lastPollTime;
+        private int _isFetching;
 
         public CodexStatusClient(string baseUrl, float pollIntervalSeconds)
         {
@@ -35,12 +36,16 @@ namespace ChillAI.Plugin
             _pollIntervalSeconds = pollIntervalSeconds;
         }
 
-        /// <summary>每帧调用；到点后丢一个后台任务去拉取（不阻塞主线程）。</summary>
+        /// <summary>每帧调用；到点后丢一个后台任务去拉取（同一时刻最多一个拉取任务，防堆积与乱序）。</summary>
         public void Update()
         {
             if (Time.unscaledTime - _lastPollTime < _pollIntervalSeconds)
             {
                 return;
+            }
+            if (Interlocked.CompareExchange(ref _isFetching, 1, 0) != 0)
+            {
+                return; // 上次拉取尚未结束，跳过本次调度
             }
             _lastPollTime = Time.unscaledTime;
             ThreadPool.QueueUserWorkItem(_ => Fetch());
@@ -71,7 +76,7 @@ namespace ChillAI.Plugin
                     snap.State = (string)obj["state"] ?? "unknown";
                     snap.Detail = (string)obj["detail"] ?? "";
                     snap.LastEvent = (string)obj["lastEvent"] ?? "";
-                    snap.SecondsSinceLastEvent = (long)(obj["secondsSinceLastEvent"] ?? 0L);
+                    snap.SecondsSinceLastEvent = (long?)obj["secondsSinceLastEvent"] ?? 0L;
                     snap.Connected = true;
                 }
                 else
@@ -90,6 +95,10 @@ namespace ChillAI.Plugin
                 {
                     _current = snap;
                 }
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _isFetching, 0);
             }
         }
     }

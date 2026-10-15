@@ -8,9 +8,10 @@
 
 - **Agent 状态 → 女主行为**：Working / Idle / Completed 状态机驱动女主角动作
 - **事件驱动**：SessionStart / UserPromptSubmit / PostToolUse / PermissionRequest / Stop / SessionEnd 六类钩子事件
-- **番茄钟联动**：以 Agent 状态为主时，覆盖游戏番茄钟对女主角的自动动作
+- **番茄钟联动**：以 Agent 状态为主时，覆盖游戏番茄钟对女主角的自动动作（Bridge 不可达或无工具数据时自动让位，不压制番茄钟）
 - **F8 设置窗口**：总开关 / Codex 为主 / 状态浮窗，游戏内调整
-- **自动配置钩子**：插件启动即自动写入 `~/.codex/hooks.json`（路径指向插件目录，跨机器通用），无需手动改配置
+- **自动配置钩子**：插件启动即按 F8 开关自动写入 `~/.codex/hooks.json` 与 `~/.zcode/cli/config.json`（路径指向插件目录，跨机器通用）；关闭对应联动开关时会自动摘除自己的钩子条目、保留用户其他配置，无需手动改配置
+- **断连自愈**：Bridge 崩溃/退出后状态自动复位，女主角不会被锁死在工作动画；Bridge 启动即退时日志给出可行动的提示（最常见：缺 ASP.NET Core 8 运行时）
 
 ## 架构
 
@@ -66,12 +67,14 @@ dotnet publish src/ChillAI.Bridge/ChillAI.Bridge.csproj -c Release -r win-x64 --
 
 ## 兼容性说明
 
-当前实现基于 **Codex Hooks 规范**（`~/.codex/hooks.json`，6 类标准事件）。插件启动时会自动配置多个 AI 工具：
+当前实现基于事件驱动的生命周期钩子机制，插件与 Bridge 原生支持并已适配多种主流 AI Agent 工具：
 
-- **Codex**：写入 `~/.codex/hooks.json`（6 事件）+ 确保 `config.toml` 的 `codex_hooks = true`
-- **ZCode**（智谱 z.ai 的 GLM 桌面编码 Agent）：写入 `~/.zcode/cli/config.json`（Claude Code hook schema，`type:"process"` 执行器，5 事件，复用同一转发脚本；受 F8「启用 ZCode 联动」开关控制，合并保留已有配置）
+- **Codex**（ChatGPT 桌面应用 / CLI）：自动写入 `~/.codex/hooks.json`（6 事件）+ 自动配置 `config.toml` 的 `codex_hooks = true`
+- **ZCode**（智谱 z.ai GLM 桌面 Agent）：自动写入 `~/.zcode/cli/config.json`（Claude Code 规范，合并保留用户既有配置）
+- **Antigravity**（Google / AGY 智能助手）：自动写入 `~/.gemini/config/hooks.json`（官方 Lifecycle Hooks 规范，受 F8 开关控制，合并保留用户其余配置）
+- **DeepSeek Harness**（`dsh` Agent 运行时）：支持通过 `dsh-hooks` 扩展在 Profile 补丁（`cordis.patch.yml`）中挂载转发脚本或直发 Webhook（模板见 `scripts/dsh-hooks.cordis.patch.yml`）
 
-各工具 hooks 的配置路径与 schema 不同，不能假设"一套配置通吃"；转发脚本只需事件名一致即可复用。详见 [docs/CODEX_STATUS.md](docs/CODEX_STATUS.md) 的兼容性小节。
+各工具 hooks 的配置路径与 schema 各异，插件内部已做格式适配与增量合流，转发脚本输出标准 JSON 适配全平台。详见 [docs/CODEX_STATUS.md](docs/CODEX_STATUS.md)。
 
 ## 许可
 

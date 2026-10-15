@@ -1,7 +1,11 @@
 using ChillAI.Bridge.Contracts;
 using ChillAI.Bridge.Services;
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = AppContext.BaseDirectory
+});
 builder.WebHost.UseUrls(builder.Configuration["Bridge:ListenUrl"] ?? "http://127.0.0.1:17860");
 
 var store = new CodexStatusStore();
@@ -9,7 +13,7 @@ builder.Services.AddSingleton(store);
 
 var app = builder.Build();
 
-app.MapGet("/health", () => Results.Ok(new HealthResponse("ok", "0.1.0")));
+app.MapGet("/health", () => Results.Ok(new HealthResponse("ok", "1.0.8")));
 
 // Codex hooks 转发脚本上报生命周期事件（POST 一行 JSON）
 app.MapPost("/codex/events", (CodexEvent evt, CodexStatusStore s, ILogger<Program> log) =>

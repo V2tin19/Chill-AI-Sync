@@ -12,45 +12,53 @@ namespace ChillAI.Plugin
         private static HeroineAI _heroine;
         private static int _lastFindFrame = -1;
 
-        /// <summary>Codex 状态变化时调用（由 StatusWorker 触发）。</summary>
-        public static void ApplyCodexState(string codexState)
+        /// <summary>Codex 状态变化时调用（由 StatusWorker 触发）。返回是否成功驱动或无需驱动。</summary>
+        public static bool ApplyCodexState(string codexState)
         {
             var target = Map(codexState);
             if (target == null)
             {
-                return; // unknown 等不干预，保持游戏默认
+                return true; // unknown 等不干预，保持游戏默认，视为已处理
             }
 
             var heroine = GetHeroine();
             if (heroine == null)
             {
-                return; // 女主角还没加载，等下次再试
+                return false; // 女主角还没加载，等下次再试
             }
 
             try
             {
                 if (heroine.GetCurrentState() == target.Value)
                 {
-                    return; // 已经在目标状态，不重复调用
+                    return true; // 已经在目标状态，不重复调用
                 }
 
                 heroine.DebugChangeState(target.Value);
                 Debug.Log($"[ChillAI] 女主角状态 -> {target.Value}");
+                return true;
             }
             catch (System.Exception ex)
             {
                 Debug.Log("[ChillAI] 驱动女主角失败: " + ex.Message);
+                return false;
             }
         }
 
         /// <summary>
         /// 温和校正（每 ~4 秒由 StatusWorker 调用）：
         /// - 工具 working → 女主必须处于工作状态（WorkPC），防止被番茄钟/游戏内部漂移；
-        /// - 工具非工作（waiting/idle/unknown/justdone/waitingreview）→ 女主若在"干活"（Work*）则拉回默认 None（停手、回到自然状态）。
+        /// - 工具非工作（waiting/idle/justdone/waitingreview）→ 女主若在"干活"（Work*）则拉回默认 None（停手、回到自然状态）。
         ///   不做"强制喝茶/强制动作"——女主不在工作状态时保持原样。
+        /// 仅在有真实工具数据时生效：Bridge 不可达或尚无任何事件（unknown）→ 不干预，交还游戏原生行为。
         /// </summary>
         public static void Reassert()
         {
+            if (!StatusWorker.BridgeConnected || StatusWorker.CurrentCodexState == "unknown")
+            {
+                return;
+            }
+
             var heroine = GetHeroine();
             if (heroine == null)
             {
@@ -85,6 +93,36 @@ namespace ChillAI.Plugin
             }
         }
 
+        /// <summary>
+        /// 一次性释放工具驱动的状态（Bridge 断连、所有联动关闭等"工具状态失效"场景）：
+        /// 女主若处于 Work*（工具驱动的工作）或 WantTalk（等待审批提醒），拉回默认 None。
+        /// 不动 WildStretchFullBody（庆祝动画会自然结束）。
+        /// </summary>
+        public static void ReleaseToolDrivenState()
+        {
+            var heroine = GetHeroine();
+            if (heroine == null)
+            {
+                return;
+            }
+            try
+            {
+                var current = heroine.GetCurrentState();
+                if (current == HeroineAI.ActionStateType.WorkPC
+                    || current == HeroineAI.ActionStateType.WorkBook
+                    || current == HeroineAI.ActionStateType.WorkReport
+                    || current == HeroineAI.ActionStateType.WantTalk)
+                {
+                    heroine.DebugChangeState(HeroineAI.ActionStateType.None);
+                    Debug.Log("[ChillAI] 工具状态失效，女主角 -> 默认（释放工具驱动状态）");
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Debug.Log("[ChillAI] 释放工具驱动状态失败: " + ex.Message);
+            }
+        }
+
         private static HeroineAI.ActionStateType? Map(string codexState)
         {
             switch (codexState)
@@ -100,18 +138,25 @@ namespace ChillAI.Plugin
 
         /// <summary>
         /// 全场景按脚本类型找女主角（不需要知道对象名）。
-        /// 每 2 秒刷新一次引用，防止切场景后失效。
+        /// 找到后每 120 帧（~2 秒）验证一次引用；未找到时至少间隔 60 帧（~1 秒）重试，避免逐帧全场景搜索造成卡顿。
         /// </summary>
         private static HeroineAI GetHeroine()
         {
-            if (_heroine == null || Time.frameCount - _lastFindFrame > 120)
+            int currentFrame = Time.frameCount;
+            if (_heroine != null && currentFrame - _lastFindFrame <= 120)
             {
-                _heroine = Object.FindFirstObjectByType<HeroineAI>();
-                _lastFindFrame = Time.frameCount;
-                if (_heroine != null)
-                {
-                    Debug.Log("[ChillAI] 已找到女主角 HeroineAI");
-                }
+                return _heroine;
+            }
+            if (_heroine == null && _lastFindFrame >= 0 && currentFrame - _lastFindFrame <= 60)
+            {
+                return null;
+            }
+
+            _lastFindFrame = currentFrame;
+            _heroine = Object.FindFirstObjectByType<HeroineAI>();
+            if (_heroine != null)
+            {
+                Debug.Log("[ChillAI] 已找到女主角 HeroineAI");
             }
             return _heroine;
         }

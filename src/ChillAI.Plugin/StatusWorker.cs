@@ -14,8 +14,11 @@ namespace ChillAI.Plugin
     {
         public static StatusWorker Instance { get; private set; }
 
-        /// <summary>最新已知的 Codex 状态（供番茄钟拦截补丁读取）。</summary>
+        /// <summary>最新已知的工具状态（供番茄钟拦截补丁读取）。仅在 Bridge 可达时更新；断连即复位为 unknown。</summary>
         public static string CurrentCodexState = "unknown";
+
+        /// <summary>Bridge 当前是否可达。番茄钟拦截与温和校正只在 true 且状态非 unknown（有真实工具数据）时生效。</summary>
+        public static bool BridgeConnected;
 
         private const string BridgeBaseUrl = "http://127.0.0.1:17860";
         private const float PollIntervalSeconds = 1f;
@@ -47,6 +50,12 @@ namespace ChillAI.Plugin
         [DllImport("user32.dll")]
         private static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
 
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
+        private static extern bool IsWindowVisible(IntPtr hWnd);
+
         private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
         [StructLayout(LayoutKind.Sequential)]
@@ -66,7 +75,9 @@ namespace ChillAI.Plugin
         }
 
         private CodexStatusClient _client;
-        private string _lastLoggedState = "";
+        private string _lastAppliedState = "";
+        private bool _wasConnected;
+        private bool _wasAnyToolOn;
         private bool _f8WasDown;
         private bool _upWasDown;
         private bool _downWasDown;
@@ -82,14 +93,56 @@ namespace ChillAI.Plugin
         private static int _hwndFindFrame = -1;
 
         // 配置窗口布局（IMGUI 屏幕坐标，左上原点）
-        private static readonly Rect WindowRect = new Rect(20, 20, 360, 226);
+        private static readonly Rect WindowRect = new Rect(20, 20, 360, 274);
         private static readonly Rect[] RowRects =
         {
-            new Rect(28, 82, 344, 30),
-            new Rect(28, 116, 344, 30),
-            new Rect(28, 150, 344, 30),
-            new Rect(28, 184, 344, 30),
+            new Rect(28, 78, 344, 30),
+            new Rect(28, 112, 344, 30),
+            new Rect(28, 146, 344, 30),
+            new Rect(28, 180, 344, 30),
+            new Rect(28, 214, 344, 30),
         };
+
+        // IMGUI 样式缓存：GUIStyle 只能在 OnGUI 内创建，缓存后避免每帧分配（GC 压力）
+        private static bool _stylesBuilt;
+        private static GUIStyle _overlayBoxStyle;
+        private static GUIStyle _overlayHintStyle;
+        private static GUIStyle _configBgStyle;
+        private static GUIStyle _configTitleStyle;
+        private static GUIStyle _configStatusStyle;
+        private static GUIStyle _configHintStyle;
+        private static GUIStyle _rowStyle;
+
+        private static void EnsureStyles()
+        {
+            if (_stylesBuilt)
+            {
+                return;
+            }
+            _stylesBuilt = true;
+
+            _overlayBoxStyle = new GUIStyle(GUI.skin.box)
+            {
+                fontSize = 15,
+                alignment = TextAnchor.UpperLeft,
+                padding = new RectOffset(12, 12, 8, 8)
+            };
+            _overlayHintStyle = new GUIStyle(GUI.skin.label) { fontSize = 11 };
+            _overlayHintStyle.normal.textColor = new Color(0.55f, 0.55f, 0.55f);
+
+            _configBgStyle = new GUIStyle(GUI.skin.box) { fontSize = 13, padding = new RectOffset(10, 10, 8, 8) };
+            _configTitleStyle = new GUIStyle(GUI.skin.label) { fontSize = 15, fontStyle = FontStyle.Bold };
+            _configTitleStyle.normal.textColor = new Color(0.15f, 0.5f, 0.9f);
+            _configStatusStyle = new GUIStyle(GUI.skin.label) { fontSize = 13 };
+            _configHintStyle = new GUIStyle(GUI.skin.label) { fontSize = 12 };
+            _configHintStyle.normal.textColor = new Color(0.5f, 0.5f, 0.5f);
+            _rowStyle = new GUIStyle(GUI.skin.box)
+            {
+                fontSize = 14,
+                alignment = TextAnchor.MiddleLeft,
+                padding = new RectOffset(10, 0, 0, 0)
+            };
+        }
 
         private void Log(string message)
         {
@@ -136,57 +189,103 @@ namespace ChillAI.Plugin
 
         public void Tick()
         {
-            if (_client == null)
-            {
-                return;
-            }
             if (Time.frameCount == _lastTickedFrame)
             {
                 return;
             }
             _lastTickedFrame = Time.frameCount;
 
-            // F8 开关设置窗口（始终可用）
-            bool f8Down = (GetAsyncKeyState(VK_F8) & 0x8000) != 0;
-            if (f8Down && !_f8WasDown)
-            {
-                _configWindowOpen = !_configWindowOpen;
-                _selectedRow = 0;
-                Log("设置窗口 " + (_configWindowOpen ? "打开" : "关闭"));
-            }
-            _f8WasDown = f8Down;
+            // 仅在游戏窗口处于前台激活状态时检测全局按键/鼠标，
+            // 避免用户在其他窗口（IDE、编辑器、浏览器）工作时误触 F8 或热键干扰设置。
+            var gameHwnd = FindGameWindow();
+            bool isForeground = gameHwnd != IntPtr.Zero && GetForegroundWindow() == gameHwnd;
 
-            // 设置窗口输入（始终可用，即使 Codex 联动被关闭）
-            if (_configWindowOpen)
+            if (isForeground)
             {
-                HandleWindowInput();
+                // F8 开关设置窗口（最先处理：不依赖客户端/Bridge 初始化是否成功）
+                bool f8Down = (GetAsyncKeyState(VK_F8) & 0x8000) != 0;
+                if (f8Down && !_f8WasDown)
+                {
+                    _configWindowOpen = !_configWindowOpen;
+                    _selectedRow = 0;
+                    Log("设置窗口 " + (_configWindowOpen ? "打开" : "关闭"));
+                }
+                _f8WasDown = f8Down;
+
+                // 设置窗口输入（始终可用，即使 Codex 联动被关闭）
+                if (_configWindowOpen)
+                {
+                    HandleWindowInput();
+                }
+            }
+            else
+            {
+                // 窗口不在前台：重置按键沿检测状态
+                _f8WasDown = false;
+                _upWasDown = false;
+                _downWasDown = false;
+                _confirmWasDown = false;
+                _lmbWasDown = false;
             }
 
-            // 总开关：任一工具（Codex/ZCode）启用才轮询与驱动。
-            // 只认 Codex 会漏掉"仅 ZCode"场景——Codex 关着时整个插件停摆（历史 bug）。
-            bool anyToolOn = (Plugin.EnableCodex?.Value ?? false) || (Plugin.EnableZcode?.Value ?? false);
+            // 惰性初始化：不依赖 OnEnable/Start 被游戏驱动（该游戏对插件组件的生命周期消息驱动不可靠）
+            if (_client == null)
+            {
+                _client = new CodexStatusClient(BridgeBaseUrl, PollIntervalSeconds);
+            }
+            BridgeLauncher.EnsureBridgeRunning(); // 内部一次性，幂等
+
+            // 总开关：任一工具（Codex/ZCode/Antigravity）启用才轮询与驱动。
+            bool anyToolOn = (Plugin.EnableCodex?.Value ?? false)
+                || (Plugin.EnableZcode?.Value ?? false)
+                || (Plugin.EnableAntigravity?.Value ?? false);
             if (!anyToolOn)
             {
+                if (_wasAnyToolOn)
+                {
+                    _wasAnyToolOn = false;
+                    _lastAppliedState = "";
+                    CurrentCodexState = "unknown";
+                    HeroineDriver.ReleaseToolDrivenState();
+                    Log("所有工具联动已关闭，女主角回到自然状态");
+                }
                 return;
             }
+            _wasAnyToolOn = true;
 
             _client.Update();
+            var snap = _client.Current;
+
+            // 连接状态迁移：断连瞬间把状态复位为 unknown 并释放女主的工具驱动状态，
+            // 防止 Bridge 崩溃后 CurrentCodexState 冻结在 "working"，把女主永久锁在工作动画。
+            if (snap.Connected != _wasConnected)
+            {
+                _wasConnected = snap.Connected;
+                BridgeConnected = snap.Connected;
+                if (!snap.Connected)
+                {
+                    _lastAppliedState = "";
+                    CurrentCodexState = "unknown";
+                    HeroineDriver.ReleaseToolDrivenState();
+                    Log("Bridge 断开连接，状态已复位为 unknown");
+                }
+            }
 
             // 心跳
             if (Time.unscaledTime - _lastHeartbeatTime >= HeartbeatIntervalSeconds)
             {
                 _lastHeartbeatTime = Time.unscaledTime;
-                var hb = _client.Current;
-                Log($"心跳: connected={hb.Connected}, state={hb.State}, error={hb.Error}");
+                Log($"心跳: connected={snap.Connected}, state={snap.State}, error={snap.Error}");
             }
 
-            // 状态变化：日志 + 驱动女主角
-            var snap = _client.Current;
-            if (snap.Connected && snap.State != _lastLoggedState)
+            // 状态变化：驱动女主角 + 日志（仅在驱动成功时推进已记录状态，防止场景加载期间漏掉初始状态）
+            if (snap.Connected && snap.State != _lastAppliedState)
             {
-                _lastLoggedState = snap.State;
-                Log($"状态 -> {snap.State} (lastEvent={snap.LastEvent}, detail={snap.Detail})");
-                HeroineDriver.ApplyCodexState(snap.State);
+                if (HeroineDriver.ApplyCodexState(snap.State))
+                {
+                    _lastAppliedState = snap.State;
+                    Log($"状态 -> {snap.State} (lastEvent={snap.LastEvent}, detail={snap.Detail})");
+                }
             }
 
             if (snap.Connected)
@@ -195,6 +294,7 @@ namespace ChillAI.Plugin
             }
 
             // 温和校正（每 4 秒）：工具 working → 女主工作；工具非工作 → 女主若在干活则拉回默认（只"停手"，不强制动作）。
+            // 仅在有真实工具数据（Bridge 可达且状态非 unknown）时生效，见 HeroineDriver.Reassert。
             // 解决"女主卡在工作动画无法解除"的问题，同时避免高频强拉的不自然感。
             if (Plugin.ToolPrimary != null && Plugin.ToolPrimary.Value
                 && Time.unscaledTime - _lastReassertTime >= 4f)
@@ -211,12 +311,12 @@ namespace ChillAI.Plugin
             bool down = (GetAsyncKeyState(VK_DOWN) & 0x8000) != 0;
             if (up && !_upWasDown)
             {
-                _selectedRow = (_selectedRow + 3) % 4;
+                _selectedRow = (_selectedRow + RowRects.Length - 1) % RowRects.Length;
                 Log("选择行 " + (_selectedRow + 1));
             }
             if (down && !_downWasDown)
             {
-                _selectedRow = (_selectedRow + 1) % 4;
+                _selectedRow = (_selectedRow + 1) % RowRects.Length;
                 Log("选择行 " + (_selectedRow + 1));
             }
             _upWasDown = up;
@@ -253,21 +353,50 @@ namespace ChillAI.Plugin
         {
             switch (_selectedRow)
             {
-                case 0: Toggle(ref Plugin.EnableCodex, "Codex 联动"); break;
-                case 1: Toggle(ref Plugin.EnableZcode, "ZCode 联动"); break;
-                case 2: Toggle(ref Plugin.ToolPrimary, "工具优先"); break;
-                case 3: Toggle(ref Plugin.ShowOverlay, "状态浮窗"); break;
+                case 0:
+                    if (Toggle(ref Plugin.EnableCodex, "Codex 联动"))
+                    {
+                        ApplyHooksToggle();
+                    }
+                    break;
+                case 1:
+                    if (Toggle(ref Plugin.EnableZcode, "ZCode 联动"))
+                    {
+                        ApplyHooksToggle();
+                    }
+                    break;
+                case 2:
+                    if (Toggle(ref Plugin.EnableAntigravity, "Antigravity 联动"))
+                    {
+                        ApplyHooksToggle();
+                    }
+                    break;
+                case 3: Toggle(ref Plugin.ToolPrimary, "工具优先"); break;
+                case 4: Toggle(ref Plugin.ShowOverlay, "状态浮窗"); break;
             }
         }
 
-        private static void Toggle(ref BepInEx.Configuration.ConfigEntry<bool> entry, string name)
+        /// <summary>联动开关变化后，按 AutoInstallHooks 与新开关值同步写入/移除对应工具的钩子配置。</summary>
+        private static void ApplyHooksToggle()
+        {
+            if (!(Plugin.AutoInstallHooks?.Value ?? true))
+            {
+                return; // 关闭自动配置：开关只影响本会话的驱动，不动配置文件
+            }
+            HooksInstaller.EnsureHooksJson();        // 按 EnableCodex 写入或移除
+            HooksInstaller.EnsureZcodeHooks();       // 按 EnableZcode 写入或移除
+            HooksInstaller.EnsureAntigravityHooks();  // 按 EnableAntigravity 写入或移除
+        }
+
+        private static bool Toggle(ref BepInEx.Configuration.ConfigEntry<bool> entry, string name)
         {
             if (entry == null)
             {
-                return;
+                return false;
             }
             entry.Value = !entry.Value;
             Instance?.Log($"设置: {name} -> {(entry.Value ? "开" : "关")}");
+            return true;
         }
 
         /// <summary>把 Win32 屏幕坐标换算成游戏内 IMGUI 坐标（按窗口客户区精确换算）。</summary>
@@ -295,7 +424,7 @@ namespace ChillAI.Plugin
             return true;
         }
 
-        /// <summary>按进程 ID 找到游戏窗口（每 10 秒刷新一次句柄）。</summary>
+        /// <summary>按进程 ID 找到游戏主可见窗口（每 10 秒刷新一次句柄）。</summary>
         private static IntPtr FindGameWindow()
         {
             if (_gameHwnd != IntPtr.Zero && Time.frameCount - _hwndFindFrame < 600)
@@ -308,7 +437,7 @@ namespace ChillAI.Plugin
             EnumWindows((h, l) =>
             {
                 GetWindowThreadProcessId(h, out var wpid);
-                if (wpid == pid)
+                if (wpid == pid && IsWindowVisible(h))
                 {
                     _gameHwnd = h;
                     return false;
@@ -325,6 +454,7 @@ namespace ChillAI.Plugin
 
         private void OnGUI()
         {
+            EnsureStyles();
             if (_configWindowOpen)
             {
                 DrawConfigWindow();
@@ -340,24 +470,21 @@ namespace ChillAI.Plugin
         private void DrawStatusOverlay()
         {
             var snap = _client?.Current;
-            var style = new GUIStyle(GUI.skin.box)
-            {
-                fontSize = 15,
-                alignment = TextAnchor.UpperLeft,
-                padding = new RectOffset(12, 12, 8, 8)
-            };
 
             string display;
-            bool anyToolOn = (Plugin.EnableCodex?.Value ?? false) || (Plugin.EnableZcode?.Value ?? false);
+            bool anyToolOn = (Plugin.EnableCodex?.Value ?? false)
+                || (Plugin.EnableZcode?.Value ?? false)
+                || (Plugin.EnableAntigravity?.Value ?? false);
             if (!anyToolOn)
             {
                 display = "工具联动已关闭（F8 打开设置）";
             }
             else if (snap != null && snap.Connected)
             {
+                var eventText = string.IsNullOrEmpty(snap.LastEvent) ? "-" : snap.LastEvent;
+                var timeText = string.IsNullOrEmpty(snap.LastEvent) ? "" : $"  | 距今 {snap.SecondsSinceLastEvent}s";
                 display = "工具: " + StateToChinese(snap.State)
-                          + "\n事件: " + (string.IsNullOrEmpty(snap.LastEvent) ? "-" : snap.LastEvent)
-                          + "  | 距今 " + snap.SecondsSinceLastEvent + "s"
+                          + "\n事件: " + eventText + timeText
                           + (string.IsNullOrEmpty(snap.Detail) ? "" : "\n" + Truncate(snap.Detail, 44));
             }
             else
@@ -365,13 +492,11 @@ namespace ChillAI.Plugin
                 display = "工具: Bridge 未连接\n" + (snap == null ? "" : Truncate(snap.Error, 44));
             }
 
-            style.normal.textColor = StateColor(snap);
-            GUI.Box(new Rect(10, 10, 360, 116), display, style);
+            _overlayBoxStyle.normal.textColor = StateColor(snap);
+            GUI.Box(new Rect(10, 10, 360, 124), display, _overlayBoxStyle);
 
             // 底部提示（不显眼的灰色小字）
-            var hintStyle = new GUIStyle(GUI.skin.label) { fontSize = 11 };
-            hintStyle.normal.textColor = new Color(0.55f, 0.55f, 0.55f);
-            GUI.Label(new Rect(22, 104, 340, 16), "覆盖番茄钟时动作抽风属正常现象", hintStyle);
+            GUI.Label(new Rect(22, 104, 340, 16), "覆盖番茄钟时动作抽风属正常现象", _overlayHintStyle);
         }
 
         // ---------------- 设置窗口 ----------------
@@ -379,47 +504,36 @@ namespace ChillAI.Plugin
         private void DrawConfigWindow()
         {
             var snap = _client?.Current;
-            var bg = new GUIStyle(GUI.skin.box) { fontSize = 13, padding = new RectOffset(10, 10, 8, 8) };
-            GUI.Box(WindowRect, "", bg);
+            GUI.Box(WindowRect, "", _configBgStyle);
 
-            var titleStyle = new GUIStyle(GUI.skin.label) { fontSize = 15, fontStyle = FontStyle.Bold };
-            titleStyle.normal.textColor = new Color(0.15f, 0.5f, 0.9f);
-            GUI.Label(new Rect(WindowRect.x + 12, WindowRect.y + 10, 300, 24), "Chill AI 设置", titleStyle);
+            GUI.Label(new Rect(WindowRect.x + 12, WindowRect.y + 10, 300, 24), "Chill AI 设置", _configTitleStyle);
 
-            var statusStyle = new GUIStyle(GUI.skin.label) { fontSize = 13 };
             string statusText = "状态: 未连接";
             if (snap != null && snap.Connected)
             {
                 statusText = "工具: " + StateToChinese(snap.State) + "  | 距今 " + snap.SecondsSinceLastEvent + "s";
             }
-            statusStyle.normal.textColor = StateColor(snap);
-            GUI.Label(new Rect(WindowRect.x + 12, WindowRect.y + 42, 320, 24), statusText, statusStyle);
+            _configStatusStyle.normal.textColor = StateColor(snap);
+            GUI.Label(new Rect(WindowRect.x + 12, WindowRect.y + 42, 320, 24), statusText, _configStatusStyle);
 
             DrawToggleRow(0, "启用 Codex 联动", Plugin.EnableCodex?.Value ?? true);
             DrawToggleRow(1, "启用 ZCode 联动", Plugin.EnableZcode?.Value ?? true);
-            DrawToggleRow(2, "工具优先（覆盖番茄钟）", Plugin.ToolPrimary?.Value ?? true);
-            DrawToggleRow(3, "显示状态浮窗", Plugin.ShowOverlay?.Value ?? true);
+            DrawToggleRow(2, "启用 Antigravity 联动", Plugin.EnableAntigravity?.Value ?? true);
+            DrawToggleRow(3, "工具优先（覆盖番茄钟）", Plugin.ToolPrimary?.Value ?? true);
+            DrawToggleRow(4, "显示状态浮窗", Plugin.ShowOverlay?.Value ?? true);
 
-            var hintStyle = new GUIStyle(GUI.skin.label) { fontSize = 12 };
-            hintStyle.normal.textColor = new Color(0.5f, 0.5f, 0.5f);
-            GUI.Label(new Rect(WindowRect.x + 12, WindowRect.y + 208, 340, 20), "↑↓ 选择 · Enter/空格 切换 · F8 关闭", hintStyle);
+            GUI.Label(new Rect(WindowRect.x + 12, WindowRect.y + 248, 340, 20), "↑↓ 选择 · Enter/空格 切换 · F8 关闭", _configHintStyle);
         }
 
         private void DrawToggleRow(int index, string label, bool value)
         {
-            var rowStyle = new GUIStyle(GUI.skin.box)
-            {
-                fontSize = 14,
-                alignment = TextAnchor.MiddleLeft,
-                padding = new RectOffset(10, 0, 0, 0)
-            };
             bool selected = index == _selectedRow;
-            rowStyle.normal.textColor = selected
+            _rowStyle.normal.textColor = selected
                 ? new Color(1f, 0.85f, 0.2f)                          // 选中：亮黄
                 : value ? new Color(0.1f, 0.6f, 0.3f) : new Color(0.5f, 0.5f, 0.5f);
             // 选中三角和勾选框分开显示，互不遮挡
             var prefix = (selected ? "▶ " : "  ") + (value ? "[✓] " : "[  ] ");
-            GUI.Box(RowRects[index], prefix + label, rowStyle);
+            GUI.Box(RowRects[index], prefix + label, _rowStyle);
         }
 
         // ---------------- 工具 ----------------

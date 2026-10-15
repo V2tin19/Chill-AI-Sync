@@ -26,4 +26,6 @@ catch {
     # Bridge 未运行或不可达：什么都不做，让 Codex 正常继续
 }
 
+# 输出标准空 JSON 响应，满足 Antigravity 等 Agent 平台的 stdout 契约
+Write-Output "{}"
 exit 0

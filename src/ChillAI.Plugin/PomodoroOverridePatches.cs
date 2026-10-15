@@ -17,13 +17,19 @@ namespace ChillAI.Plugin
 
         private static bool Enabled()
         {
-            // 工具优先开启 且 至少一个工具（Codex/ZCode）启用 → 拦截番茄钟自动动作。
-            // 任一工具的事件都进 Bridge 更新 CurrentCodexState，女主统一跟随工具状态。
+            // 拦截需要同时满足：工具优先开 + 至少一个工具启用 + 有真实工具数据
+            // （Bridge 可达且状态非 unknown——否则是在没有任何依据的情况下压制番茄钟行为）。
             if (!(Plugin.ToolPrimary?.Value ?? true))
             {
                 return false;
             }
-            return (Plugin.EnableCodex?.Value ?? false) || (Plugin.EnableZcode?.Value ?? false);
+            if (!((Plugin.EnableCodex?.Value ?? false)
+                  || (Plugin.EnableZcode?.Value ?? false)
+                  || (Plugin.EnableAntigravity?.Value ?? false)))
+            {
+                return false;
+            }
+            return StatusWorker.BridgeConnected && StatusWorker.CurrentCodexState != "unknown";
         }
 
         private static void ThrottledLog(string message)
@@ -36,7 +42,7 @@ namespace ChillAI.Plugin
             Plugin.StaticLogger?.LogInfo("[ChillAI] " + message);
         }
 
-        /// <summary>番茄钟动作的真正入口：开始/切换工作/休息/完成全部汇聚于此。工具优先时一律拦截，女主状态改由工具状态驱动（Reassert 每 2s 校正）。</summary>
+        /// <summary>番茄钟动作的真正入口：开始/切换工作/休息/完成全部汇聚于此。工具优先且有真实工具数据时一律拦截，女主状态改由工具状态驱动（Reassert 每 4s 校正）。</summary>
         [HarmonyPatch(typeof(HeroineAI), nameof(HeroineAI.ChangePomodoroActionAsync))]
         public static class ChangePomodoroActionPatch
         {

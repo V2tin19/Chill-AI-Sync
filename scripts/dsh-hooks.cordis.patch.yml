@@ -1,0 +1,26 @@
+# DeepSeek Harness (dsh) -> Chill AI 联动配置示例
+# 用法：将下列 rules 配置合并入你的 DeepSeek Harness Profile 补丁配置文件（如 cordis.patch.yml）
+# 注意：把 command 里的路径改成实际游戏插件目录下的 codex-hook.ps1 绝对路径
+
+dsh-hooks:
+  rules:
+    # 步骤开始执行时通知：女主进入专注工作
+    - on: agent/pre-step
+      action: exec
+      command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "<游戏目录>\BepInEx\plugins\ChillAI\codex-hook.ps1" -EventName UserPromptSubmit
+
+    # 工具调用时通知：女主保持专注工作
+    - on: tool/call
+      action: exec
+      command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "<游戏目录>\BepInEx\plugins\ChillAI\codex-hook.ps1" -EventName PostToolUse
+
+    # 等待用户权限审批时通知：女主想找你说话
+    - on: approval/asked
+      action: exec
+      command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "<游戏目录>\BepInEx\plugins\ChillAI\codex-hook.ps1" -EventName PermissionRequest
+
+    # 回合完成任务时通知：女主伸展庆祝（15s 后自动恢复待命/休息）
+    - on: turn/end
+      when: completed
+      action: exec
+      command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "<游戏目录>\BepInEx\plugins\ChillAI\codex-hook.ps1" -EventName Stop

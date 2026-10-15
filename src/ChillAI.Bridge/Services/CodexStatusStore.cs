@@ -37,10 +37,19 @@ public sealed class CodexStatusStore
             _detail = evt.Detail;
 
             var next = Map(name);
-            if (next is { } s && s != _state)
+            if (next is { } s)
             {
-                _state = s;
-                _changedAtUtc = now;
+                if (s != _state)
+                {
+                    _state = s;
+                    _changedAtUtc = now;
+                }
+                else if (s == CodexState.JustDone || s == CodexState.Working)
+                {
+                    // 重复的 Stop / Working：刷新计时器。
+                    // JustDone 重新起算 15s 庆祝衰减；Working 刷新以重置 SinceUtc 计时。
+                    _changedAtUtc = now;
+                }
             }
 
             _history.Add(new CodexEventRecord(name, evt.Detail, now, _state.ToString().ToLowerInvariant()));
@@ -71,11 +80,19 @@ public sealed class CodexStatusStore
 
     private static CodexState? Map(string eventName) => eventName.ToLowerInvariant() switch
     {
-        "sessionstart" or "userpromptsubmit" or "taskstarted" => CodexState.Working,
-        "posttooluse" => CodexState.Working,
-        "permissionrequest" => CodexState.WaitingReview,
-        "taskcomplete" or "stop" => CodexState.JustDone,
+        // Codex / ZCode / Antigravity / DeepSeek Harness 工作中事件
+        "sessionstart" or "userpromptsubmit" or "taskstarted" or "preinvocation" => CodexState.Working,
+        "posttooluse" or "pretooluse" or "step/start" or "agent/pre-step" or "tool/call" or "tool/result" => CodexState.Working,
+
+        // 用户审批事件（等待人机交互审批权限）
+        "permissionrequest" or "approval/asked" => CodexState.WaitingReview,
+
+        // 任务完成（触发庆祝动画，15s 后衰减为 waiting）
+        "taskcomplete" or "stop" or "turn/end" => CodexState.JustDone,
+
+        // 会话结束 / 放弃
         "turnaborted" or "sessionend" => CodexState.Idle,
+
         _ => null,
     };
 

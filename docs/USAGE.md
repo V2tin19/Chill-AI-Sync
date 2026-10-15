@@ -13,7 +13,7 @@
 | `codex-hook.ps1` | 转发脚本：把 Codex 生命周期事件 POST 给 Bridge | 不需要手动管——插件自动写配置 |
 | `~/.codex/hooks.json` | Codex 钩子配置（6 个事件） | **插件自动写入**，路径自动指向插件目录 |
 
-> 插件启动时会自动：① 静默启动 Bridge（无窗口，若 17860 端口已有 Bridge 在跑则直接复用）② 写入 `~/.codex/hooks.json`（指向插件目录里的转发脚本，跨机器通用）③ 确保 `~/.codex/config.toml` 含 `[features] codex_hooks = true`（CLI 通道需要）。**你不需要开任何 PowerShell 窗口，也不需要手动改任何配置文件。**
+> 插件启动时会自动：① 静默启动 Bridge（无窗口，若 17860 端口已有 Bridge 在跑则直接复用）② 按 F8 联动开关写入或移除 `~/.codex/hooks.json`（指向插件目录里的转发脚本，跨机器通用）③ 确保 `~/.codex/config.toml` 含 `[features] codex_hooks = true`（CLI 通道需要，仅 Codex 联动开启时）。**你不需要开任何 PowerShell 窗口，也不需要手动改任何配置文件；关闭联动开关时插件会自动摘除自己的钩子条目。**
 
 ---
 
@@ -65,9 +65,9 @@
 
 | 开关 | 说明 |
 |---|---|
-| 启用 Codex 联动 | 接入 Codex（ChatGPT）钩子事件 |
-| 启用 ZCode 联动 | 接入 ZCode（z.ai GLM）钩子事件（写 `~/.zcode/cli/config.json`，Claude Code hook schema） |
-| 工具优先（覆盖番茄钟） | 开：女主角状态完全由已启用工具（Codex/ZCode 任一）决定，游戏番茄钟的自动动作会被覆盖（**动作抽风属正常现象**）；关：恢复游戏原生番茄钟驱动 |
+| 启用 Codex 联动 | 接入 Codex（ChatGPT）钩子事件；关闭时会自动从 `~/.codex/hooks.json` 摘除本插件的钩子条目 |
+| 启用 ZCode 联动 | 接入 ZCode（z.ai GLM）钩子事件（写 `~/.zcode/cli/config.json`，Claude Code hook schema）；关闭时自动摘除本插件的条目，用户其他配置保留 |
+| 工具优先（覆盖番茄钟） | 开：女主角状态完全由已启用工具（Codex/ZCode 任一）决定，游戏番茄钟的自动动作会被覆盖（**动作抽风属正常现象**）；仅在 Bridge 可达且有工具数据时生效，否则交还游戏原生行为。关：恢复游戏原生番茄钟驱动 |
 | 显示状态浮窗 | 左上角状态浮窗显示/隐藏 |
 
 设置自动保存在 `BepInEx\config\Chill.AI.cfg`，重启游戏后保留。
@@ -90,10 +90,10 @@
 
 | 现象 | 原因与处理 |
 |---|---|
-| 浮窗显示"Bridge 未连接" | Bridge 没起来：确认插件目录里有 `ChillAI.Bridge.exe`；或手动运行它看报错 |
+| 浮窗显示"Bridge 未连接" | Bridge 没起来：确认插件目录里有 `ChillAI.Bridge.exe`，或手动运行它看报错；若日志出现"Bridge 进程已退出（退出码 …）"，最常见原因是缺 ASP.NET Core 8 运行时（见下方环境要求） |
 | 状态一直是 unknown | 工具钩子没触发：检查工具 App/CLI 的**钩子信任**是否批准（最常见）；确认 Hooks 开关打开；Codex 侧 `~/.codex/hooks.json`、ZCode 侧 `~/.zcode/cli/config.json` 若被手动改坏，删掉后重启游戏让插件重写即可 |
 | 浮窗一直不出现 | 游戏内按 F8 检查"显示状态浮窗"是否开启 |
-| 女主角不动 | 检查"工具优先"和至少一个工具联动（Codex/ZCode）是否开启；看 `BepInEx\LogOutput.log` 里 `[ChillAI]` 日志 |
+| 女主角不动 | 检查"工具优先"和至少一个工具联动（Codex/ZCode）是否开启；看 `BepInEx\LogOutput.log` 里 `[ChillAI]` 日志。注意：Bridge 未连接或还没收到过任何工具事件时，女主行为交还游戏原生驱动，属预期 |
 | 钩子被 Codex 清掉 | 桌面 App 会用内部状态重写 config.toml——用 App 设置界面的 Hooks 开关（它自己持久化），不要只改 config.toml。插件每次启动会重新确保 `codex_hooks = true`（CLI 通道） |
 | `clamping ... timeout` 警告 | 无害，转发脚本足够快，可忽略 |
 
@@ -102,7 +102,7 @@
 ## 六、环境要求与泛用性说明
 
 - **游戏**：《Chill with You: Lo-Fi Story》（Unity 2022.3，BepInEx 5）
-- **.NET 8 运行时**：Bridge 依赖（Windows 上一般已装；`dotnet --version` 可查）
+- **.NET 8 的 ASP.NET Core Runtime**：Bridge 依赖（**注意不是基础 .NET Runtime**——只装基础运行时的话 Bridge 会启动即退）。检查：`dotnet --list-runtimes` 应包含 `Microsoft.AspNetCore.App 8.x`；没有的话到 https://dotnet.microsoft.com/download/dotnet/8.0 下载 **ASP.NET Core Runtime 8.0 → Windows → x64 Installer** 安装
 - **游戏路径无关**：插件运行时不使用游戏绝对路径；Bridge/钩子脚本都从**插件自身目录**自动定位
 - **钩子路径自适应**：`~/.codex/hooks.json` 由插件自动写入（指向插件目录内的 `codex-hook.ps1`，JSON 语法由插件校验保证），`config.toml` 的 `codex_hooks` 开关也自动确保——换机器、换目录都不用改
 - **端口**：17860（本地回环）。若已有 Bridge 占用该端口，插件自动复用，不会重复启动
@@ -117,10 +117,10 @@
 dotnet build src\ChillAI.Plugin\ChillAI.Plugin.csproj -c Release -p:GameDir="<游戏目录>"
 # 构建 Bridge
 dotnet build src\ChillAI.Bridge\ChillAI.Bridge.csproj -c Release
-# 一键编译+部署插件
+# 一键编译并自动部署到游戏目录（不传 -GameDir 时自动探测默认 Steam 安装位置）
 .\scripts\deploy.ps1 -GameDir "<游戏目录>"
-# 反射查看游戏内部 API（HeroineAI 等）
-dotnet tools\GameApiDump\bin\Release\net8.0\GameApiDump.dll "<游戏目录>\Chill With You_Data\Managed\Assembly-CSharp.dll" "<游戏目录>\Chill With You_Data\Managed" HeroineAI
+# 一键本地构建与产物检查
+.\scripts\check.ps1 -GameDir "<游戏目录>"
 ```
 
 技术架构详见 [docs/CODEX_STATUS.md](CODEX_STATUS.md)。

@@ -43,7 +43,7 @@ ChillAI.Bridge（状态机）
    cp scripts/codex-hooks.json ~/.codex/hooks.json
    ```
 
-2. **编辑 `~/.codex/hooks.json`，把所有 `command` 里的路径改成你 clone 本仓库的实际路径**（当前是 `D:\gitstuff\Chill_with_AI`，换成你自己的）。
+2. **编辑 `~/.codex/hooks.json`，把所有 `command` 里的路径改成你 clone 本仓库的实际路径**（当前是 `D:\gitstuff\Chill-AI-Heroine-Sync`，换成你自己的）。
 
 3. 在 `~/.codex/config.toml` 顶部加入（如果 `[features]` 已存在就直接加一行）：
 
@@ -94,7 +94,7 @@ Invoke-RestMethod http://127.0.0.1:17860/codex/status
 | PermissionRequest | `waitingreview` | 提醒："有个决定需要你" |
 | taskcomplete / stop | `justdone`（15s 后衰减 `waiting`） | 庆祝动画 + 祝贺 |
 | turnaborted / sessionend | `idle` | 收工告别 |
-| （兜底）working 超 10 分钟无事件 | `waiting` | 防止钩子静默失效后卡死 |
+| （兜底）working 超 2 分钟（120 秒）无事件 | `waiting` | 防止钩子静默失效后卡死 |
 
 状态变更同时记录最近 50 条事件历史（`GET /codex/events`），便于诊断和做更细的行为。
 
@@ -128,8 +128,14 @@ Invoke-RestMethod http://127.0.0.1:17860/codex/status
 
 ## 与其他 AI 工具的兼容性
 
-本通道基于 **Codex Hooks 规范**：`~/.codex/hooks.json`（6 类标准事件：SessionStart / UserPromptSubmit / PostToolUse / PermissionRequest / Stop / SessionEnd）+ `config.toml` 的 `[features] codex_hooks = true`。转发脚本 `codex-hook.ps1` 只依赖「事件名 → HTTP POST」这一个事实，因此事件名相同的工具都能复用。
+本通道基于**生命周期钩子事件驱动**。转发脚本 `codex-hook.ps1` 负责接收事件名并 POST 给 Bridge，并向 stdout 吐出标准 JSON `{}`。因此，只要目标工具具备生命周期钩子扩展能力，均可复用：
 
-- **Codex（ChatGPT 桌面应用 / CLI）**：`~/.codex/hooks.json`，6 事件，`type:"command"` 单命令字符串。插件自动写入。
-- **ZCode（智谱 z.ai 的 GLM 桌面编码 Agent）**：**有自己的原生 hooks 机制**（官方文档 zcode.z.ai/docs/hooks），配置在 `~/.zcode/cli/config.json`，采用 **Claude Code hook schema**：`events` + `matcher` + `type:"process"`（command 与 args 分开、不经 shell 直接 argv 执行），事件名 SessionStart / UserPromptSubmit / PostToolUse / PermissionRequest / Stop 与 Codex 一致，但**没有 SessionEnd**。插件按该格式单独写入（合并保留用户已有 hooks，受 F8「启用 ZCode 联动」开关控制），转发脚本仍复用 `codex-hook.ps1`。
-- **判断方法**：查目标工具的官方文档确认其 hooks 配置文件与 schema（Codex 式 `hooks.json` / Claude Code 式 `cli/config.json` / 其他），再按对应格式写入；不能假设"一套配置通吃"。
+- **Codex（ChatGPT 桌面应用 / CLI）**：`~/.codex/hooks.json`，6 事件，`type:"command"` 单命令字符串。插件启动时按 F8 联动开关自动写入/摘除。
+- **ZCode（智谱 z.ai 的 GLM 桌面编码 Agent）**：`~/.zcode/cli/config.json`，采用 **Claude Code hook schema**：`events` + `matcher` + `type:"process"`（command 与 args 分开、不经 shell 直接 argv 执行），事件名与 Codex 一致（无 SessionEnd）。插件按该格式合并写入/摘除。
+- **Antigravity（Google / AGY 智能助手）**：`~/.gemini/config/hooks.json`，采用 **Antigravity 官方 Lifecycle Hooks schema**：顶级命名为 `chill-ai-sync`，支持 `PreInvocation`（任务启动）、`PostToolUse`（工具调用）、`Stop`（任务完成）。插件受 F8「启用 Antigravity 联动」开关控制，自动安全合并写入/摘除（保留用户其他 named hooks）。
+- **DeepSeek Harness（`dsh` Agent 运行时）**：DeepSeek 官方基于 Cordis 构建的 Agent 运行时。支持通过 `dsh-hooks` 扩展在 Profile 补丁配置文件（`cordis.patch.yml`）中配置触发器：
+  - `agent/pre-step` → `UserPromptSubmit`（Working）
+  - `tool/call` → `PostToolUse`（Working）
+  - `approval/asked` → `PermissionRequest`（WaitingReview）
+  - `turn/end (when: completed)` → `Stop`（JustDone）
+  - 示例模板详见 `scripts/dsh-hooks.cordis.patch.yml`；亦可通过 `dsh-webhook` 直接向 Bridge POST 事件。
