@@ -93,7 +93,7 @@ namespace ChillAI.Plugin
         private static int _hwndFindFrame = -1;
 
         // 配置窗口布局（IMGUI 屏幕坐标，左上原点）
-        private static readonly Rect WindowRect = new Rect(20, 20, 360, 274);
+        private static readonly Rect WindowRect = new Rect(20, 20, 360, 312);
         private static readonly Rect[] RowRects =
         {
             new Rect(28, 78, 344, 30),
@@ -101,6 +101,7 @@ namespace ChillAI.Plugin
             new Rect(28, 146, 344, 30),
             new Rect(28, 180, 344, 30),
             new Rect(28, 214, 344, 30),
+            new Rect(28, 248, 344, 30),
         };
 
         // IMGUI 样式缓存：GUIStyle 只能在 OnGUI 内创建，缓存后避免每帧分配（GC 压力）
@@ -235,10 +236,11 @@ namespace ChillAI.Plugin
             }
             BridgeLauncher.EnsureBridgeRunning(); // 内部一次性，幂等
 
-            // 总开关：任一工具（Codex/ZCode/Antigravity）启用才轮询与驱动。
+            // 总开关：任一工具（Codex/ZCode/Antigravity/dsh）启用才轮询与驱动。
             bool anyToolOn = (Plugin.EnableCodex?.Value ?? false)
                 || (Plugin.EnableZcode?.Value ?? false)
-                || (Plugin.EnableAntigravity?.Value ?? false);
+                || (Plugin.EnableAntigravity?.Value ?? false)
+                || (Plugin.EnableDsh?.Value ?? false);
             if (!anyToolOn)
             {
                 if (_wasAnyToolOn)
@@ -371,8 +373,14 @@ namespace ChillAI.Plugin
                         ApplyHooksToggle();
                     }
                     break;
-                case 3: Toggle(ref Plugin.ToolPrimary, "工具优先"); break;
-                case 4: Toggle(ref Plugin.ShowOverlay, "状态浮窗"); break;
+                case 3:
+                    if (Toggle(ref Plugin.EnableDsh, "DSH 联动"))
+                    {
+                        ApplyHooksToggle();
+                    }
+                    break;
+                case 4: Toggle(ref Plugin.ToolPrimary, "工具优先"); break;
+                case 5: Toggle(ref Plugin.ShowOverlay, "状态浮窗"); break;
             }
         }
 
@@ -386,6 +394,7 @@ namespace ChillAI.Plugin
             HooksInstaller.EnsureHooksJson();        // 按 EnableCodex 写入或移除
             HooksInstaller.EnsureZcodeHooks();       // 按 EnableZcode 写入或移除
             HooksInstaller.EnsureAntigravityHooks();  // 按 EnableAntigravity 写入或移除
+            HooksInstaller.EnsureDshHooks();          // 按 EnableDsh 写入或移除
         }
 
         private static bool Toggle(ref BepInEx.Configuration.ConfigEntry<bool> entry, string name)
@@ -474,7 +483,8 @@ namespace ChillAI.Plugin
             string display;
             bool anyToolOn = (Plugin.EnableCodex?.Value ?? false)
                 || (Plugin.EnableZcode?.Value ?? false)
-                || (Plugin.EnableAntigravity?.Value ?? false);
+                || (Plugin.EnableAntigravity?.Value ?? false)
+                || (Plugin.EnableDsh?.Value ?? false);
             if (!anyToolOn)
             {
                 display = "工具联动已关闭（F8 打开设置）";
@@ -519,10 +529,11 @@ namespace ChillAI.Plugin
             DrawToggleRow(0, "启用 Codex 联动", Plugin.EnableCodex?.Value ?? true);
             DrawToggleRow(1, "启用 ZCode 联动", Plugin.EnableZcode?.Value ?? true);
             DrawToggleRow(2, "启用 Antigravity 联动", Plugin.EnableAntigravity?.Value ?? true);
-            DrawToggleRow(3, "工具优先（覆盖番茄钟）", Plugin.ToolPrimary?.Value ?? true);
-            DrawToggleRow(4, "显示状态浮窗", Plugin.ShowOverlay?.Value ?? true);
+            DrawToggleRow(3, "启用 DSH 联动", Plugin.EnableDsh?.Value ?? true);
+            DrawToggleRow(4, "工具优先（覆盖番茄钟）", Plugin.ToolPrimary?.Value ?? true);
+            DrawToggleRow(5, "显示状态浮窗", Plugin.ShowOverlay?.Value ?? true);
 
-            GUI.Label(new Rect(WindowRect.x + 12, WindowRect.y + 248, 340, 20), "↑↓ 选择 · Enter/空格 切换 · F8 关闭", _configHintStyle);
+            GUI.Label(new Rect(WindowRect.x + 12, WindowRect.y + 282, 340, 20), "↑↓ 选择 · Enter/空格 切换 · F8 关闭", _configHintStyle);
         }
 
         private void DrawToggleRow(int index, string label, bool value)

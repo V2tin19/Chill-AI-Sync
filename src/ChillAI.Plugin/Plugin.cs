@@ -35,7 +35,10 @@ namespace ChillAI.Plugin
         /// <summary>启用 Antigravity 联动（写入 ~/.gemini/config/hooks.json）。</summary>
         public static ConfigEntry<bool> EnableAntigravity;
 
-        /// <summary>自动写入 AI 工具钩子配置（~/.codex/hooks.json + ~/.zcode/cli/config.json + ~/.gemini/config/hooks.json，路径指向插件目录，跨机器通用）。</summary>
+        /// <summary>启用 DeepSeek Harness（dsh）联动（写入 ~/.dsh/profiles/&lt;profile&gt;/cordis.patch.yml）。</summary>
+        public static ConfigEntry<bool> EnableDsh;
+
+        /// <summary>自动写入 AI 工具钩子配置（~/.codex/hooks.json + ~/.zcode/cli/config.json + ~/.gemini/config/hooks.json + dsh profile 补丁，路径指向插件目录，跨机器通用）。</summary>
         public static ConfigEntry<bool> AutoInstallHooks;
 
         private void Awake()
@@ -44,10 +47,11 @@ namespace ChillAI.Plugin
             EnableCodex = Config.Bind("General", "EnableCodex", true, "启用 Codex 联动（总开关）");
             EnableZcode = Config.Bind("General", "EnableZcode", true, "启用 ZCode 联动：向 ~/.zcode/cli/config.json 写入 Claude Code 格式 hooks");
             EnableAntigravity = Config.Bind("General", "EnableAntigravity", true, "启用 Antigravity 联动：向 ~/.gemini/config/hooks.json 写入生命周期 hooks");
-            ToolPrimary = Config.Bind("General", "ToolPrimary", true, "工具优先：已启用工具（Codex/ZCode/Antigravity）的状态优先，覆盖游戏番茄钟对女主角的自动动作");
+            EnableDsh = Config.Bind("General", "EnableDsh", true, "启用 DeepSeek Harness（dsh）联动：向 ~/.dsh/profiles/<profile>/cordis.patch.yml 挂载 dsh-hook.mjs");
+            ToolPrimary = Config.Bind("General", "ToolPrimary", true, "工具优先：已启用工具（Codex/ZCode/Antigravity/dsh）的状态优先，覆盖游戏番茄钟对女主角的自动动作");
             ShowOverlay = Config.Bind("General", "ShowOverlay", true, "显示状态浮窗");
-            AutoInstallHooks = Config.Bind("General", "AutoInstallHooks", true, "自动写入 AI 工具钩子配置（指向插件目录内的 codex-hook.ps1）");
-            Logger.LogInfo($"{PluginName} {PluginVersion} loaded (EnableCodex={EnableCodex.Value}, EnableZcode={EnableZcode.Value}, EnableAntigravity={EnableAntigravity.Value}, ToolPrimary={ToolPrimary.Value})");
+            AutoInstallHooks = Config.Bind("General", "AutoInstallHooks", true, "自动写入 AI 工具钩子配置（指向插件目录内的转发脚本 / dsh-hook.mjs）");
+            Logger.LogInfo($"{PluginName} {PluginVersion} loaded (EnableCodex={EnableCodex.Value}, EnableZcode={EnableZcode.Value}, EnableAntigravity={EnableAntigravity.Value}, EnableDsh={EnableDsh.Value}, ToolPrimary={ToolPrimary.Value})");
 
             if (AutoInstallHooks.Value)
             {
@@ -55,6 +59,7 @@ namespace ChillAI.Plugin
                 HooksInstaller.EnsureHooksJson();          // Codex: ~/.codex/hooks.json（受 EnableCodex 控制）
                 HooksInstaller.EnsureZcodeHooks();         // ZCode: ~/.zcode/cli/config.json（受 EnableZcode 控制）
                 HooksInstaller.EnsureAntigravityHooks();    // Antigravity: ~/.gemini/config/hooks.json（受 EnableAntigravity 控制）
+                HooksInstaller.EnsureDshHooks();            // dsh: ~/.dsh/profiles/<profile>/cordis.patch.yml（受 EnableDsh 控制）
                 HooksInstaller.EnsureConfigFeatures();     // Codex: ~/.codex/config.toml（仅 EnableCodex 开时）
             }
 

@@ -133,9 +133,27 @@ Invoke-RestMethod http://127.0.0.1:17860/codex/status
 - **Codex（ChatGPT 桌面应用 / CLI）**：`~/.codex/hooks.json`，6 事件，`type:"command"` 单命令字符串。插件启动时按 F8 联动开关自动写入/摘除。
 - **ZCode（智谱 z.ai 的 GLM 桌面编码 Agent）**：`~/.zcode/cli/config.json`，采用 **Claude Code hook schema**：`events` + `matcher` + `type:"process"`（command 与 args 分开、不经 shell 直接 argv 执行），事件名与 Codex 一致（无 SessionEnd）。插件按该格式合并写入/摘除。
 - **Antigravity（Google / AGY 智能助手）**：`~/.gemini/config/hooks.json`，采用 **Antigravity 官方 Lifecycle Hooks schema**：顶级命名为 `chill-ai-sync`，支持 `PreInvocation`（任务启动）、`PostToolUse`（工具调用）、`Stop`（任务完成）。插件受 F8「启用 Antigravity 联动」开关控制，自动安全合并写入/摘除（保留用户其他 named hooks）。
-- **DeepSeek Harness（`dsh` Agent 运行时）**：DeepSeek 官方基于 Cordis 构建的 Agent 运行时。支持通过 `dsh-hooks` 扩展在 Profile 补丁配置文件（`cordis.patch.yml`）中配置触发器：
-  - `agent/pre-step` → `UserPromptSubmit`（Working）
-  - `tool/call` → `PostToolUse`（Working）
-  - `approval/asked` → `PermissionRequest`（WaitingReview）
-  - `turn/end (when: completed)` → `Stop`（JustDone）
-  - 示例模板详见 `scripts/dsh-hooks.cordis.patch.yml`；亦可通过 `dsh-webhook` 直接向 Bridge POST 事件。
+- **DeepSeek Harness（`dsh` Agent 运行时）**：DeepSeek 官方开源的 Agent 运行时（Cordis 插件架构，MIT）。本插件随发布包分发一个 dsh 侧桥接插件 `scripts/dsh-hook.mjs`，由游戏插件按 F8 开关自动复制并挂载到当前 profile 的 `cordis.patch.yml`（关闭时自动摘除本区块，保留用户其余 patch 条目）。
+
+  > **勘误**：本仓库 v1.0.8 早期文档曾写「通过 `dsh-hooks` 扩展配置 `rules: - on: …`」——**这个说法是错的**。npm 上并不存在 `@deepseek-ai/dsh-hooks`（404），该 schema 也不是任何真实插件的格式；`agent/pre-step` / `tool/call` / `approval/asked` / `turn/end` 是 dsh 的 **session 事件类型**（见 `dsh-session` 的 `known-event-types`），不是可配置的钩子点。
+
+  桥接插件挂在 dsh **官方文档化的拦截 seam** 上（与官方桥接包 `@deepseek-ai/dsh-hooks-codex` 用的是同一批扩展点）：
+
+  | dsh seam | 上报给 Bridge 的事件 | 游戏状态 |
+  |---|---|---|
+  | `agent/created` | `SessionStart` | 正在工作 |
+  | `agent/pre-step`（waterfall，纯观测、原样 `next()`） | `UserPromptSubmit` | 正在工作 |
+  | `tools/post-execute`（waterfall，纯观测、原样 `next()`） | `PostToolUse` | 正在工作 |
+  | `approval/asked`（durable session 事件） | `PermissionRequest` | 等待审批 |
+  | `agent/turn-stopping` | `Stop` | 刚完成任务（15s 后衰减） |
+  | `agent/disposed` | `SessionEnd` | 空闲 |
+
+  为什么不直接用官方桥接包 `@deepseek-ai/dsh-hooks-codex`：
+
+  1. 它只支持 5 个 Codex 事件点，**不支持 `PermissionRequest`**（配置会被静默丢弃），游戏里拿不到「等待审批」；
+  2. 它是 profile 级的 npm 依赖，需要用户自己往 profile 里 `pnpm` 安装，且 peer 版本与 dsh 核心严格对齐（本机 dsh 核心为 `0.2.1-rc.2`，就得装 `0.2.1-rc.2`）——游戏插件无法替用户自动完成，破坏「装上就能用」；
+  3. 每个事件都要起一个 `powershell.exe` 子进程执行 hooks.json 里的命令。
+
+  自研的 `dsh-hook.mjs` 零依赖（只用 Node 内置 `fetch`）、进程内直发、六状态全覆盖。挂载细节与手动挂载步骤见 `scripts/dsh-hooks.cordis.patch.yml`。
+
+  > 注意：`session/end-seed` 是 fork/resume 的**种子标记**，不是「会话结束」，因此不要把它映射成 `SessionEnd`（桥接插件里用的是 `agent/disposed`）。

@@ -1,26 +1,33 @@
-# DeepSeek Harness (dsh) -> Chill AI 联动配置示例
-# 用法：将下列 rules 配置合并入你的 DeepSeek Harness Profile 补丁配置文件（如 cordis.patch.yml）
-# 注意：把 command 里的路径改成实际游戏插件目录下的 codex-hook.ps1 绝对路径
+# Chill AI × DeepSeek Harness（dsh）联动 —— 手动挂载参考
+#
+# 正常情况下你不需要手改这个文件：游戏插件（ChillAI.Plugin）在启动时会自动把
+# dsh-hook.mjs 复制到当前 profile 目录，并把下面这段 insert 区块合并进该 profile 的
+# cordis.patch.yml；在 F8 里关掉「启用 DSH 联动」时会自动摘除本区块（你自己写的
+# 其他 patch 条目一律保留）。
+#
+# 本文件仅用于手动挂载 / 排查。
+#
+# ── 挂载步骤 ────────────────────────────────────────────────────────────────
+# 1. 找到当前 profile 目录：%USERPROFILE%\.dsh\profiles\<profile>\
+#    （<profile> 就是环境变量 DSH_PROFILE 的值，桌面版默认是 desktop，Web 版是 web）
+# 2. 把仓库 scripts\dsh-hook.mjs 复制到该目录下（文件名保持一致）
+# 3. 把下面的 insert 区块追加到该目录的 cordis.patch.yml 末尾
+#    —— 注意：如果文件里当前只有一行 `[]`，请用本区块「替换」那一行，
+#       不要追加在 `[]` 后面（`[]` 后面再写列表项不是合法 YAML）
+# 4. 重启 DeepSeek Harness（新插件的 JS 模块需要重新加载一代）
+#
+# ── 校验 ────────────────────────────────────────────────────────────────────
+# Bridge 侧：Invoke-RestMethod http://127.0.0.1:17860/codex/status
+#   在 dsh 里跑一个任务，应看到 state 依次变为 working → justdone → waiting；
+#   弹出审批时应为 waitingreview。
+# 事件历史：Invoke-RestMethod http://127.0.0.1:17860/codex/events
+#
+# ── 说明 ────────────────────────────────────────────────────────────────────
+# dsh-hook.mjs 挂在 dsh 自己的拦截 seam 上（agent/created、agent/pre-step、
+# tools/post-execute、agent/turn-stopping、agent/disposed、approval/asked），
+# 进程内直接 POST 给 Bridge，不起子进程、不需要 pnpm 安装任何依赖包。
+# 事件名与 Codex 钩子事件同名，Bridge 已原生识别。
 
-dsh-hooks:
-  rules:
-    # 步骤开始执行时通知：女主进入专注工作
-    - on: agent/pre-step
-      action: exec
-      command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "<游戏目录>\BepInEx\plugins\ChillAI\codex-hook.ps1" -EventName UserPromptSubmit
-
-    # 工具调用时通知：女主保持专注工作
-    - on: tool/call
-      action: exec
-      command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "<游戏目录>\BepInEx\plugins\ChillAI\codex-hook.ps1" -EventName PostToolUse
-
-    # 等待用户权限审批时通知：女主想找你说话
-    - on: approval/asked
-      action: exec
-      command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "<游戏目录>\BepInEx\plugins\ChillAI\codex-hook.ps1" -EventName PermissionRequest
-
-    # 回合完成任务时通知：女主伸展庆祝（15s 后自动恢复待命/休息）
-    - on: turn/end
-      when: completed
-      action: exec
-      command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "<游戏目录>\BepInEx\plugins\ChillAI\codex-hook.ps1" -EventName Stop
+- insert:
+    - id: chillai-sync
+      name: './dsh-hook.mjs'

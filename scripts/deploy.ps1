@@ -62,9 +62,13 @@ Copy-Item -LiteralPath $pluginDll -Destination (Join-Path $targetPluginDir 'Chil
 # Copy bridge published artifacts
 Copy-Item -Path (Join-Path $tempBridgePublishDir '*') -Destination $targetPluginDir -Recurse -Force
 
-# Copy hook script
+# Copy hook scripts
 $hookScript = Join-Path $repositoryRoot 'scripts\codex-hook.ps1'
 Copy-Item -LiteralPath $hookScript -Destination (Join-Path $targetPluginDir 'codex-hook.ps1') -Force
+
+# Copy dsh bridge plugin (mounted into the dsh profile as ./dsh-hook.mjs)
+$dshHook = Join-Path $repositoryRoot 'scripts\dsh-hook.mjs'
+Copy-Item -LiteralPath $dshHook -Destination (Join-Path $targetPluginDir 'dsh-hook.mjs') -Force
 
 # Clean temp directory
 if (Test-Path $tempBridgePublishDir) {

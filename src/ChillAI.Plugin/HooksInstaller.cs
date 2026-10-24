@@ -582,6 +582,126 @@ namespace ChillAI.Plugin
             );
         }
 
+        // ---------------- DeepSeek Harness (dsh) ----------------
+
+        /// <summary>
+        /// 按 EnableDsh 写入或移除 dsh profile 的联动配置。写入时：
+        /// ① 把插件目录里的 dsh-hook.mjs 复制到当前 profile 目录（Loader 的相对路径以补丁文件为锚点）；
+        /// ② 在 cordis.patch.yml 里合并一段带标记的 insert 区块（保留用户已有的 patch 条目）。
+        /// 关闭时只摘除本区块，用户配置与其他插件条目原样保留。
+        /// 纯文本合并逻辑在 <see cref="DshPatchFile"/>（不依赖 Unity，可单独编译测试）。
+        /// 注意：新插件的 JS 模块需要重启 DeepSeek Harness 才会加载。
+        /// </summary>
+        public static void EnsureDshHooks()
+        {
+            var profileDir = DshProfileDir();
+            if (profileDir == null)
+            {
+                return; // 本机没装 dsh 或没有 profile：静默跳过，不影响其他联动
+            }
+
+            var patchPath = Path.Combine(profileDir, "cordis.patch.yml");
+
+            if (!(Plugin.EnableDsh?.Value ?? true))
+            {
+                RemoveDshHooks(profileDir);
+                return;
+            }
+
+            var sourcePath = PluginScriptPath(DshPatchFile.PluginFileName);
+            if (sourcePath == null)
+            {
+                return;
+            }
+
+            try
+            {
+                Directory.CreateDirectory(profileDir);
+
+                // ① 复制桥接插件到 profile 目录（同名覆盖，保证路径稳定）
+                File.Copy(sourcePath, Path.Combine(profileDir, DshPatchFile.PluginFileName), true);
+
+                // ② 合并 cordis.patch.yml
+                var text = File.Exists(patchPath) ? File.ReadAllText(patchPath) : "";
+                File.WriteAllText(patchPath, DshPatchFile.EnsureMounted(text));
+                Log("已更新 " + patchPath + "（DSH 联动已挂载；重启 DeepSeek Harness 后生效）");
+            }
+            catch (Exception ex)
+            {
+                Log("写入 dsh profile 配置失败: " + ex.Message);
+            }
+        }
+
+        /// <summary>从 dsh profile 的 cordis.patch.yml 摘除本插件的区块，用户其余 patch 条目全部保留。</summary>
+        public static void RemoveDshHooks(string profileDir = null)
+        {
+            profileDir = profileDir ?? DshProfileDir();
+            if (profileDir == null)
+            {
+                return;
+            }
+
+            var patchPath = Path.Combine(profileDir, "cordis.patch.yml");
+            try
+            {
+                if (!File.Exists(patchPath))
+                {
+                    return;
+                }
+
+                var text = File.ReadAllText(patchPath);
+                if (!DshPatchFile.ContainsBlock(text))
+                {
+                    return; // 不含本插件的区块：完全不动
+                }
+
+                File.WriteAllText(patchPath, DshPatchFile.EnsureRemoved(text));
+                Log("已从 " + patchPath + " 摘除 ChillAI DSH 区块（其余 patch 条目保留）");
+            }
+            catch (Exception ex)
+            {
+                Log("移除 dsh profile 配置失败: " + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// 定位当前 dsh profile 目录：优先环境变量 DSH_PROFILE（profile 名），
+        /// 否则在 ~/.dsh/profiles 下按 desktop → web → 唯一子目录 的顺序探测。
+        /// 未安装 dsh（没有 ~/.dsh/profiles）时返回 null。
+        /// </summary>
+        private static string DshProfileDir()
+        {
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var profilesRoot = Path.Combine(home, ".dsh", "profiles");
+            if (!Directory.Exists(profilesRoot))
+            {
+                return null;
+            }
+
+            var profileName = Environment.GetEnvironmentVariable("DSH_PROFILE");
+            if (!string.IsNullOrWhiteSpace(profileName))
+            {
+                var named = Path.Combine(profilesRoot, profileName.Trim());
+                if (Directory.Exists(named))
+                {
+                    return named;
+                }
+                Log("提示：DSH_PROFILE=" + profileName + " 指向的目录不存在，改为自动探测 profile");
+            }
+
+            foreach (var candidate in new[] { "desktop", "web" })
+            {
+                var dir = Path.Combine(profilesRoot, candidate);
+                if (Directory.Exists(dir))
+                {
+                    return dir;
+                }
+            }
+
+            var dirs = Directory.GetDirectories(profilesRoot);
+            return dirs.Length == 1 ? dirs[0] : null;
+        }
+
         // ---------------- 通用 ----------------
 
         private static string CodexHome() =>
@@ -605,18 +725,18 @@ namespace ChillAI.Plugin
             return token.ToString(Formatting.None).IndexOf(ScriptMarker, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        /// <summary>插件目录里的 codex-hook.ps1 路径；不存在则返回 null。</summary>
-        private static string PluginScriptPath()
+        /// <summary>插件目录里的转发脚本路径；不存在则返回 null。</summary>
+        private static string PluginScriptPath(string fileName = "codex-hook.ps1")
         {
             var pluginDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             if (string.IsNullOrEmpty(pluginDir))
             {
                 return null;
             }
-            var scriptPath = Path.Combine(pluginDir, "codex-hook.ps1");
+            var scriptPath = Path.Combine(pluginDir, fileName);
             if (!File.Exists(scriptPath))
             {
-                Log($"未找到 codex-hook.ps1（{scriptPath}），跳过 hooks 写入");
+                Log($"未找到 {fileName}（{scriptPath}），跳过对应写入");
                 return null;
             }
             return scriptPath;
