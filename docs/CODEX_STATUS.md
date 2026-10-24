@@ -129,7 +129,7 @@ working(6) > waitingreview(5) > justdone(4) > waiting(3) > idle(2) > unknown(1)
 
 | 端点 | 方法 | 说明 |
 |---|---|---|
-| `/health` | GET | 健康检查 `{"status":"ok","version":"1.0.8","features":["source-aggregation"]}`；`features` 供插件判断端口上跑的是不是同一代 Bridge |
+| `/health` | GET | 健康检查 `{"status":"ok","version":"1.0.9","features":["source-aggregation"]}`；`features` 供插件判断端口上跑的是不是同一代 Bridge |
 | `/codex/status` | GET | 当前状态（state / detail / sinceUtc / lastEvent / secondsSinceLastEvent / **source**）；`source` 是当前"赢得"聚合的工具名，未标注来源时为 `null` |
 | `/codex/events` | GET | 最近 50 条事件历史（event / detail / atUtc / stateAfter / source） |
 | `/codex/events` | POST | 上报事件 `{"event":"Stop","detail":"可选","source":"codex"}`（event 大小写不敏感；source 可省略） |

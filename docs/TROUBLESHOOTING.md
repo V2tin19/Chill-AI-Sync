@@ -84,7 +84,7 @@ AI 工具 ──钩子事件──▶ 转发脚本 ──HTTP──▶ ChillAI.B
    Select-String -Path "<游戏目录>\BepInEx\LogOutput.log" -Pattern '\[ChillAI\]' | Select-Object -Last 20
    ```
 
-   正常应包含 `Chill AI 1.0.8 loaded` 和 `已静默启动本地 Bridge`。
+   正常应包含 `Chill AI 1.0.9 loaded` 和 `已静默启动本地 Bridge`。
    出现 `Bridge 进程已退出（退出码 …）` → 直接跳到 4.1 节。
 
 ### 2.2 本地服务（Bridge）
@@ -118,7 +118,7 @@ Invoke-RestMethod http://127.0.0.1:17860/codex/events | Format-Table event, deta
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:17860/health
-# 新版会返回 features：{"status":"ok","version":"1.0.8","features":["source-aggregation"]}
+# 新版会返回 features：{"status":"ok","version":"1.0.9","features":["source-aggregation"]}
 # 没有 features 字段 = 旧版
 ```
 

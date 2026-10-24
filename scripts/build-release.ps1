@@ -1,4 +1,4 @@
-﻿<#
+<#
   Chill AI 发布打包（build-release.ps1）
   ---------------------------------------------------------------------------
   一条命令产出可以直接传到 GitHub Releases 的 zip：
@@ -7,7 +7,7 @@
 
   产出的 zip 结构（全部 ASCII 文件名，避免解压时中文名乱码）：
 
-    ChillAI-v1.0.8\
+    ChillAI-v<版本>\        ← 版本号取自 Plugin.cs（当前 1.0.9）
       ├─ README-FIRST.txt   ← 中文说明（UTF-8 BOM）
       ├─ install.bat        ← 零基础用户双击这个
       ├─ install.ps1
