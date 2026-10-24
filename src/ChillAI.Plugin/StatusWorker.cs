@@ -26,6 +26,7 @@ namespace ChillAI.Plugin
 
         // Win32 虚拟键码（F8 打开窗口，避免 F12 触发 Steam 截图）
         private const int VK_F8 = 0x77;
+        private const int VK_ESCAPE = 0x1B;
         private const int VK_UP = 0x26;
         private const int VK_DOWN = 0x28;
         private const int VK_RETURN = 0x0D;
@@ -79,10 +80,12 @@ namespace ChillAI.Plugin
         private bool _wasConnected;
         private bool _wasAnyToolOn;
         private bool _f8WasDown;
+        private bool _escWasDown;
         private bool _upWasDown;
         private bool _downWasDown;
         private bool _confirmWasDown;
         private bool _lmbWasDown;
+        private bool _closeHover;
         private bool _configWindowOpen;
         private int _selectedRow;
         private float _lastHeartbeatTime;
@@ -94,6 +97,9 @@ namespace ChillAI.Plugin
 
         // 配置窗口布局（IMGUI 屏幕坐标，左上原点）
         private static readonly Rect WindowRect = new Rect(20, 20, 360, 312);
+
+        /// <summary>右上角「隐藏窗口」按钮（可点击，等价于按 F8 / Esc）。</summary>
+        private static readonly Rect CloseButtonRect = new Rect(WindowRect.xMax - 34, WindowRect.y + 8, 26, 24);
         private static readonly Rect[] RowRects =
         {
             new Rect(28, 78, 344, 30),
@@ -107,12 +113,15 @@ namespace ChillAI.Plugin
         // IMGUI 样式缓存：GUIStyle 只能在 OnGUI 内创建，缓存后避免每帧分配（GC 压力）
         private static bool _stylesBuilt;
         private static GUIStyle _overlayBoxStyle;
+        private static GUIStyle _overlayTitleStyle;
+        private static GUIStyle _overlayInfoStyle;
         private static GUIStyle _overlayHintStyle;
         private static GUIStyle _configBgStyle;
         private static GUIStyle _configTitleStyle;
         private static GUIStyle _configStatusStyle;
         private static GUIStyle _configHintStyle;
         private static GUIStyle _rowStyle;
+        private static GUIStyle _closeButtonStyle;
 
         private static void EnsureStyles()
         {
@@ -128,6 +137,15 @@ namespace ChillAI.Plugin
                 alignment = TextAnchor.UpperLeft,
                 padding = new RectOffset(12, 12, 8, 8)
             };
+            // 浮窗分三层：状态标题（大、按状态着色）/ 说明信息（小、浅灰）/ 操作提示（更小、深灰）
+            _overlayTitleStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 16,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.UpperLeft
+            };
+            _overlayInfoStyle = new GUIStyle(GUI.skin.label) { fontSize = 12 };
+            _overlayInfoStyle.normal.textColor = new Color(0.82f, 0.82f, 0.82f);
             _overlayHintStyle = new GUIStyle(GUI.skin.label) { fontSize = 11 };
             _overlayHintStyle.normal.textColor = new Color(0.55f, 0.55f, 0.55f);
 
@@ -142,6 +160,13 @@ namespace ChillAI.Plugin
                 fontSize = 14,
                 alignment = TextAnchor.MiddleLeft,
                 padding = new RectOffset(10, 0, 0, 0)
+            };
+            _closeButtonStyle = new GUIStyle(GUI.skin.box)
+            {
+                fontSize = 14,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                padding = new RectOffset(0, 0, 0, 0)
             };
         }
 
@@ -213,9 +238,19 @@ namespace ChillAI.Plugin
                 }
                 _f8WasDown = f8Down;
 
+                // Esc 的按下沿无条件更新（否则"窗口关闭期间按住 Esc"会留下过期状态，
+                // 导致下次一开窗就被立刻关掉）
+                bool escDown = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
+                if (_configWindowOpen && escDown && !_escWasDown)
+                {
+                    CloseConfigWindow("Esc");
+                }
+                _escWasDown = escDown;
+
                 // 设置窗口输入（始终可用，即使 Codex 联动被关闭）
                 if (_configWindowOpen)
                 {
+                    UpdateCloseButtonHover();
                     HandleWindowInput();
                 }
             }
@@ -223,10 +258,12 @@ namespace ChillAI.Plugin
             {
                 // 窗口不在前台：重置按键沿检测状态
                 _f8WasDown = false;
+                _escWasDown = false;
                 _upWasDown = false;
                 _downWasDown = false;
                 _confirmWasDown = false;
                 _lmbWasDown = false;
+                _closeHover = false;
             }
 
             // 惰性初始化：不依赖 OnEnable/Start 被游戏驱动（该游戏对插件组件的生命周期消息驱动不可靠）
@@ -337,6 +374,14 @@ namespace ChillAI.Plugin
             {
                 if (TryGetGameClientPoint(out var p))
                 {
+                    // 先判「隐藏窗口」按钮：否则它会被下面的行命中逻辑抢走
+                    if (CloseButtonRect.Contains(p))
+                    {
+                        _lmbWasDown = lmb;
+                        CloseConfigWindow("点击隐藏按钮");
+                        return;
+                    }
+
                     for (int i = 0; i < RowRects.Length; i++)
                     {
                         if (RowRects[i].Contains(p))
@@ -349,6 +394,29 @@ namespace ChillAI.Plugin
                 }
             }
             _lmbWasDown = lmb;
+        }
+
+        /// <summary>收起设置窗口（F8 / Esc / 右上角按钮共用）。</summary>
+        private void CloseConfigWindow(string cause)
+        {
+            if (!_configWindowOpen)
+            {
+                return;
+            }
+            _configWindowOpen = false;
+            _closeHover = false;
+            Log("设置窗口 关闭（" + cause + "）");
+        }
+
+        /// <summary>鼠标是否悬停在隐藏按钮上（用于高亮反馈）。每帧仅在窗口打开时探测一次。</summary>
+        private void UpdateCloseButtonHover()
+        {
+            bool hover = false;
+            if (TryGetGameClientPoint(out var p))
+            {
+                hover = CloseButtonRect.Contains(p);
+            }
+            _closeHover = hover;
         }
 
         private void ToggleSelectedRow()
@@ -476,37 +544,54 @@ namespace ChillAI.Plugin
 
         // ---------------- 状态浮窗 ----------------
 
+        /// <summary>
+        /// 状态浮窗：只用中文、不暴露内部事件名，按"状态 → 谁在驱动 → 最近发生了什么 → 怎么改设置"排列。
+        /// 文案由 <see cref="OverlayText"/> 组装（纯函数、可单独测试），这里只负责画。
+        /// </summary>
         private void DrawStatusOverlay()
         {
             var snap = _client?.Current;
 
-            string display;
             bool anyToolOn = (Plugin.EnableCodex?.Value ?? false)
                 || (Plugin.EnableZcode?.Value ?? false)
                 || (Plugin.EnableAntigravity?.Value ?? false)
                 || (Plugin.EnableDsh?.Value ?? false);
-            if (!anyToolOn)
+
+            var content = OverlayText.Build(
+                anyToolOn,
+                snap != null && snap.Connected,
+                snap?.State,
+                snap?.Source,
+                snap?.LastEvent,
+                snap?.Detail,
+                snap?.Error,
+                snap?.SecondsSinceLastEvent ?? 0L,
+                Plugin.ToolPrimary?.Value ?? false);
+
+            var boxRect = new Rect(10, 10, OverlayText.OverlayWidth, OverlayText.Height(content));
+
+            _overlayBoxStyle.normal.textColor = Color.white;
+            GUI.Box(boxRect, "", _overlayBoxStyle);
+
+            float y = boxRect.y + OverlayText.PadTop;
+            _overlayTitleStyle.normal.textColor = StateColor(snap);
+            GUI.Label(new Rect(boxRect.x + OverlayText.PadX, y, boxRect.width - OverlayText.PadX * 2, OverlayText.TitleHeight),
+                content.Title, _overlayTitleStyle);
+            y += OverlayText.TitleHeight;
+
+            foreach (var info in content.Infos)
             {
-                display = "工具联动已关闭（F8 打开设置）";
+                GUI.Label(new Rect(boxRect.x + OverlayText.PadX, y, boxRect.width - OverlayText.PadX * 2, OverlayText.InfoHeight),
+                    info, _overlayInfoStyle);
+                y += OverlayText.InfoHeight;
             }
-            else if (snap != null && snap.Connected)
+            if (content.Infos.Count > 0)
             {
-                var eventText = string.IsNullOrEmpty(snap.LastEvent) ? "-" : snap.LastEvent;
-                var timeText = string.IsNullOrEmpty(snap.LastEvent) ? "" : $"  | 距今 {snap.SecondsSinceLastEvent}s";
-                display = "工具: " + StateToChinese(snap.State)
-                          + "\n事件: " + eventText + timeText
-                          + (string.IsNullOrEmpty(snap.Detail) ? "" : "\n" + Truncate(snap.Detail, 44));
-            }
-            else
-            {
-                display = "工具: Bridge 未连接\n" + (snap == null ? "" : Truncate(snap.Error, 44));
+                y += OverlayText.Gap;
             }
 
-            _overlayBoxStyle.normal.textColor = StateColor(snap);
-            GUI.Box(new Rect(10, 10, 360, 124), display, _overlayBoxStyle);
-
-            // 底部提示（不显眼的灰色小字）
-            GUI.Label(new Rect(22, 104, 340, 16), "覆盖番茄钟时动作抽风属正常现象", _overlayHintStyle);
+            GUI.Label(new Rect(boxRect.x + OverlayText.PadX, y, boxRect.width - OverlayText.PadX * 2, OverlayText.HintHeight),
+                content.Hint, _overlayHintStyle);
         }
 
         // ---------------- 设置窗口 ----------------
@@ -516,15 +601,18 @@ namespace ChillAI.Plugin
             var snap = _client?.Current;
             GUI.Box(WindowRect, "", _configBgStyle);
 
-            GUI.Label(new Rect(WindowRect.x + 12, WindowRect.y + 10, 300, 24), "Chill AI 设置", _configTitleStyle);
+            // 标题留出右上角按钮的位置
+            GUI.Label(new Rect(WindowRect.x + 12, WindowRect.y + 10, WindowRect.width - 60, 24), "Chill AI 设置", _configTitleStyle);
+            DrawCloseButton();
 
-            string statusText = "状态: 未连接";
-            if (snap != null && snap.Connected)
-            {
-                statusText = "工具: " + StateToChinese(snap.State) + "  | 距今 " + snap.SecondsSinceLastEvent + "s";
-            }
+            var statusText = OverlayText.ConfigStatusLine(
+                snap != null && snap.Connected,
+                snap?.State,
+                snap?.Source,
+                snap?.LastEvent,
+                snap?.SecondsSinceLastEvent ?? 0L);
             _configStatusStyle.normal.textColor = StateColor(snap);
-            GUI.Label(new Rect(WindowRect.x + 12, WindowRect.y + 42, 320, 24), statusText, _configStatusStyle);
+            GUI.Label(new Rect(WindowRect.x + 12, WindowRect.y + 42, WindowRect.width - 24, 24), statusText, _configStatusStyle);
 
             DrawToggleRow(0, "启用 Codex 联动", Plugin.EnableCodex?.Value ?? true);
             DrawToggleRow(1, "启用 ZCode 联动", Plugin.EnableZcode?.Value ?? true);
@@ -533,7 +621,21 @@ namespace ChillAI.Plugin
             DrawToggleRow(4, "工具优先（覆盖番茄钟）", Plugin.ToolPrimary?.Value ?? true);
             DrawToggleRow(5, "显示状态浮窗", Plugin.ShowOverlay?.Value ?? true);
 
-            GUI.Label(new Rect(WindowRect.x + 12, WindowRect.y + 282, 340, 20), "↑↓ 选择 · Enter/空格 切换 · F8 关闭", _configHintStyle);
+            GUI.Label(new Rect(WindowRect.x + 12, WindowRect.y + 282, WindowRect.width - 24, 20),
+                "↑↓ 选择 · Enter/空格 切换 · 点右上角 × 或按 Esc/F8 收起", _configHintStyle);
+        }
+
+        /// <summary>
+        /// 右上角「隐藏窗口」按钮：鼠标悬停高亮，点击收起设置窗口。
+        /// 用 × (U+00D7) 而不是 ✕ (U+2715)：前者在 Arial/Unity 内置字体里必定有字形，
+        /// 后者可能渲染成空白方块。
+        /// </summary>
+        private void DrawCloseButton()
+        {
+            _closeButtonStyle.normal.textColor = _closeHover
+                ? new Color(1f, 0.45f, 0.4f)
+                : new Color(0.75f, 0.75f, 0.75f);
+            GUI.Box(CloseButtonRect, "×", _closeButtonStyle);
         }
 
         private void DrawToggleRow(int index, string label, bool value)
@@ -549,18 +651,8 @@ namespace ChillAI.Plugin
 
         // ---------------- 工具 ----------------
 
-        private static string StateToChinese(string state)
-        {
-            switch (state)
-            {
-                case "working": return "正在工作";
-                case "justdone": return "刚完成任务";
-                case "waiting": return "休息 / 待命中";
-                case "waitingreview": return "等待审批";
-                case "idle": return "空闲";
-                default: return state;
-            }
-        }
+        // 文案（状态/事件/来源的中文化、时间说法）统一在 OverlayText 里，纯函数、可单独测试；
+        // 这里只留与 Unity 相关的绘制与颜色。
 
         private static Color StateColor(CodexStatusClient.Snapshot snap)
         {
@@ -577,15 +669,6 @@ namespace ChillAI.Plugin
                 case "idle": return new Color(0.6f, 0.6f, 0.6f);
                 default: return Color.white;
             }
-        }
-
-        private static string Truncate(string text, int max)
-        {
-            if (string.IsNullOrEmpty(text) || text.Length <= max)
-            {
-                return text;
-            }
-            return text.Substring(0, max) + "...";
         }
     }
 }

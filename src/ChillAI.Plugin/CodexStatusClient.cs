@@ -17,6 +17,7 @@ namespace ChillAI.Plugin
             public string State = "unknown";
             public string Detail = "";
             public string LastEvent = "";
+            public string Source = "";
             public long SecondsSinceLastEvent;
             public bool Connected;
             public string Error = "";
@@ -76,6 +77,7 @@ namespace ChillAI.Plugin
                     snap.State = (string)obj["state"] ?? "unknown";
                     snap.Detail = (string)obj["detail"] ?? "";
                     snap.LastEvent = (string)obj["lastEvent"] ?? "";
+                    snap.Source = (string)obj["source"] ?? "";
                     snap.SecondsSinceLastEvent = (long?)obj["secondsSinceLastEvent"] ?? 0L;
                     snap.Connected = true;
                 }

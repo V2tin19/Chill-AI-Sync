@@ -136,13 +136,38 @@ export function apply(ctx) {
     }),
   )
 
-  // ---- 等待审批：approval/asked 是 durable session 事件（没有对应的拦截 seam）----
+  // ---- 「等人类」的两类事件 ----
+  //
+  // dsh 里"智能体停下来等你"有两种完全不同的机制，都必须映射成 PermissionRequest
+  // （游戏里 = 等待你审批 = 女主"想和你对话"），否则女主会在你被晾着的时候继续"工作"：
+  //
+  //   1) 权限审批：dsh 在执行敏感工具前请求授权 → durable 会话事件 approval/asked。
+  //      （没有对应的拦截 seam，只能听 session/event。）
+  //   2) 智能体主动提问：模型调用 ask_user_question 工具问你 → 只是一次普通的 tool/call，
+  //      没有专门的事件类型，所以要按工具名识别。
+  //
   // 注意：session/end-seed 是 fork/resume 的种子标记，不是「会话结束」，不要误映射。
+  const QUESTION_TOOL = 'ask_user_question'
+
   ctx.on(
     'session/event',
     safe((_session, event) => {
-      if (event?.type === 'approval/asked') {
+      const type = event?.type
+
+      if (type === 'approval/asked') {
         report('PermissionRequest', event?.data?.toolName)
+        return
+      }
+
+      if (type === 'approval/decided') {
+        // 已经答复：立刻回到"工作中"，不必等下一个工具事件才恢复
+        report('approval/decided')
+        return
+      }
+
+      if (type === 'tool/call' && event?.data?.name === QUESTION_TOOL) {
+        // 智能体在等你回答问题（游戏里显示"等待你审批"、女主想找你说话）
+        report('PermissionRequest', QUESTION_TOOL)
       }
     }),
   )

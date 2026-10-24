@@ -34,10 +34,15 @@ public sealed record CodexEvent(string Event, string? Detail = null, string? Sou
 /// <summary>已收到的历史事件（诊断用）。</summary>
 public sealed record CodexEventRecord(string Event, string? Detail, DateTimeOffset AtUtc, string StateAfter, string? Source = null);
 
-/// <summary>GET /codex/status 的响应体。</summary>
+/// <summary>
+/// GET /codex/status 的响应体。
+/// <paramref name="Source"/> 是当前"赢得"聚合的那个来源（工具名），供浮窗显示
+/// "这个状态是哪个工具带来的"；未标注来源的上报为 null。
+/// </summary>
 public sealed record CodexStatusDto(
     string State,
     string? Detail,
     DateTimeOffset SinceUtc,
     string? LastEvent,
-    long SecondsSinceLastEvent);
+    long SecondsSinceLastEvent,
+    string? Source = null);

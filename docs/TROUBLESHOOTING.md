@@ -183,6 +183,76 @@ Invoke-RestMethod http://127.0.0.1:17860/health
   应能看到 `id: chillai-sync` 那段带标记的区块。
 - dsh 是开发者预览版，官方会有破坏性变更；若升级 dsh 后失效，重新跑一次游戏让插件重写挂载即可。
 
+#### 「dsh 在等我，但女主没反应」
+
+dsh 里"智能体停下来等你"有**两种**机制，插件都做了映射（游戏里都显示"等待你审批"、女主想找你说话）：
+
+| 你在 dsh 里看到 | dsh 内部事件 | 插件映射 |
+|---|---|---|
+| 权限审批弹窗（如"是否允许提权到 full access"） | 会话事件 `approval/asked` | `PermissionRequest` |
+| 智能体**问你问题**（`ask_user_question` 选择框） | 只是一次普通的 `tool/call`（工具名 `ask_user_question`） | `PermissionRequest` |
+
+排查步骤：
+
+1. 确认 `~/.dsh/profiles/<profile>/dsh-hook.mjs` 是**较新版本**（文件里应能搜到 `ask_user_question`）：
+
+   ```powershell
+   Select-String -Path "$env:USERPROFILE\.dsh\profiles\desktop\dsh-hook.mjs" -Pattern 'ask_user_question'
+   ```
+
+   搜不到 = 旧版（老版本只处理权限审批，不处理"智能体提问"）→ 启动一次游戏让插件重新复制，或重启 dsh。
+
+2. 跑一次 `doctor.bat`，看第 4 段的**最近事件**里有没有 `PermissionRequest`：
+
+   ```powershell
+   Invoke-RestMethod http://127.0.0.1:17860/codex/events | Select-Object -Last 5
+   ```
+
+   - 有 `PermissionRequest` 但游戏没反应 → 游戏侧问题（确认游戏在运行、第 3 段通过）；
+   - 完全没有 → 说明该事件没被插件转发（确认上面的版本检查）。
+
+3. **「工具优先」必须是开的**。女主状态的**维持**（每 4 秒一次的温和校正）只在
+   「工具优先（覆盖番茄钟）」开启时运行；关着的时候插件只在状态**变化那一刻**点一下，
+   之后她会被游戏自身的逻辑带回闲置——看起来就像"没反应"。
+
+4. 直接绕过 dsh，单独验证游戏侧（最省事的隔离测法）：
+
+   ```powershell
+   # 模拟"dsh 在等你审批"
+   Invoke-RestMethod http://127.0.0.1:17860/codex/events -Method Post `
+     -ContentType 'application/json' -Body '{"event":"PermissionRequest","source":"dsh"}'
+   # 结束测试
+   Invoke-RestMethod http://127.0.0.1:17860/codex/events -Method Post `
+     -ContentType 'application/json' -Body '{"event":"approval/decided","source":"dsh"}'
+   ```
+
+   > 必须带 `"source":"dsh"`：Bridge 按来源聚合，而 `working` 优先级高于 `waitingreview`，
+   > 所以要覆盖 dsh 这个来源本身，否则 agent 一跑工具就把状态顶回"工作中"。
+
+5. 还不行就看驱动层日志。**注意一个坑**：插件里 `HeroineDriver` 的日志如果只写
+   `UnityEngine.Debug.Log`，会被编译器整个去掉（连字符串一起），日志里什么都看不到。
+   现在它已改为同时写 BepInEx logger，所以下面这类行应该出现：
+
+   ```powershell
+   Select-String -Path "<游戏目录>\BepInEx\LogOutput.log" -Pattern '\[ChillAI\]' | Select-Object -Last 20
+   ```
+
+   正常应能看到：
+
+   ```text
+   [ChillAI] 已找到女主角 HeroineAI
+   [ChillAI] 工具状态 waitingreview → 女主 WorkPC -> WantTalk（调用后回读 WantTalk）
+   [ChillAI] 校正女主 -> 想找你说话（工具在等你，原状态 None）
+   ```
+
+   - 没有 `已找到女主角` → 插件没找到女主实例（可能还在加载场景）；
+   - 有 `调用后回读` 但回读值不是 `WantTalk` → 游戏没接受这次状态切换（把这几行发出来）；
+   - 一条都没有 → 装的还是旧版插件（旧版这些日志被编译掉了，日志里就是空白）。
+
+3. 注意时序：dsh 的审批/提问都是**会话事件**，`session/event` 实时通道已验证可用
+   （同 profile 的 `dsh-cost-meter` 就是靠它实时记账的）。若怀疑通道没通，
+   直接看游戏日志里的 `[ChillAI]` 行。
+
 ---
 
 ## 4. 环境类问题

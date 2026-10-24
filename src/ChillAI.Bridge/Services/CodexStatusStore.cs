@@ -181,6 +181,9 @@ public sealed class CodexStatusStore
         // 用户审批事件（等待人机交互审批权限）
         "permissionrequest" or "approval/asked" => CodexState.WaitingReview,
 
+        // 审批已答复 / 智能体提问被回答：立刻回到工作中，不必等下一个工具事件
+        "approval/decided" => CodexState.Working,
+
         // 任务完成（触发庆祝动画，15s 后衰减为 waiting）
         "taskcomplete" or "stop" or "turn/end" => CodexState.JustDone,
 
@@ -195,8 +198,10 @@ public sealed class CodexStatusStore
         // 聚合：取优先级最高的来源；同优先级取最近有事件的那个。
         CodexState? winner = null;
         SourceState? winnerState = null;
-        foreach (var state in _sources.Values)
+        string? winnerSource = null;
+        foreach (var pair in _sources)
         {
+            var state = pair.Value;
             var effective = Effective(state, now);
             var better = winner == null
                 || Priority(effective) > Priority(winner.Value)
@@ -207,6 +212,7 @@ public sealed class CodexStatusStore
             {
                 winner = effective;
                 winnerState = state;
+                winnerSource = pair.Key;
             }
         }
 
@@ -227,11 +233,17 @@ public sealed class CodexStatusStore
             detail = _detail;
         }
 
+        // "default" 表示上报方没声明来源（老脚本/手写配置），对用户没有信息量，对外报 null
+        var source = string.Equals(winnerSource, DefaultSource, StringComparison.OrdinalIgnoreCase)
+            ? null
+            : winnerSource;
+
         return new CodexStatusDto(
             aggregate.ToString().ToLowerInvariant(),
             detail,
             _aggregateChangedAtUtc,
             lastEvent,
-            Math.Max(0, (long)(now - _lastEventAtUtc).TotalSeconds));
+            Math.Max(0, (long)(now - _lastEventAtUtc).TotalSeconds),
+            source);
     }
 }

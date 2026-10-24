@@ -70,6 +70,15 @@ Copy-Item -LiteralPath $hookScript -Destination (Join-Path $targetPluginDir 'cod
 $dshHook = Join-Path $repositoryRoot 'scripts\dsh-hook.mjs'
 Copy-Item -LiteralPath $dshHook -Destination (Join-Path $targetPluginDir 'dsh-hook.mjs') -Force
 
+# Copy the doctor scripts too: 否则游戏目录里会留着上一次安装的旧体检脚本，
+# 它不认识新能力（例如旧 Bridge 检测），给出的结论会误导。
+foreach ($doctorFile in @('doctor.ps1', 'doctor.bat')) {
+    $source = Join-Path $repositoryRoot "scripts\$doctorFile"
+    if (Test-Path -LiteralPath $source) {
+        Copy-Item -LiteralPath $source -Destination (Join-Path $targetPluginDir $doctorFile) -Force
+    }
+}
+
 # Clean temp directory
 if (Test-Path $tempBridgePublishDir) {
     Remove-Item -Recurse -Force $tempBridgePublishDir

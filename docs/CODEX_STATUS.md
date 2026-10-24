@@ -91,7 +91,8 @@ Invoke-RestMethod http://127.0.0.1:17860/codex/status
 | 事件 | 推导状态 | 建议游戏行为 |
 |---|---|---|
 | SessionStart / UserPromptSubmit / taskstarted / PostToolUse | `working` | Focus：角色安静陪伴 |
-| PermissionRequest | `waitingreview` | 提醒："有个决定需要你" |
+| PermissionRequest / approval/asked | `waitingreview` | 提醒："有个决定需要你" |
+| approval/decided | `working` | 你已答复，继续干活 |
 | taskcomplete / stop | `justdone`（15s 后衰减 `waiting`） | 庆祝动画 + 祝贺 |
 | turnaborted / sessionend | `idle` | 收工告别 |
 | （兜底）working 超 2 分钟（120 秒）无事件 | `waiting` | 防止钩子静默失效后卡死 |
@@ -129,7 +130,7 @@ working(6) > waitingreview(5) > justdone(4) > waiting(3) > idle(2) > unknown(1)
 | 端点 | 方法 | 说明 |
 |---|---|---|
 | `/health` | GET | 健康检查 `{"status":"ok","version":"1.0.8","features":["source-aggregation"]}`；`features` 供插件判断端口上跑的是不是同一代 Bridge |
-| `/codex/status` | GET | 当前状态（state / detail / sinceUtc / lastEvent / secondsSinceLastEvent） |
+| `/codex/status` | GET | 当前状态（state / detail / sinceUtc / lastEvent / secondsSinceLastEvent / **source**）；`source` 是当前"赢得"聚合的工具名，未标注来源时为 `null` |
 | `/codex/events` | GET | 最近 50 条事件历史（event / detail / atUtc / stateAfter / source） |
 | `/codex/events` | POST | 上报事件 `{"event":"Stop","detail":"可选","source":"codex"}`（event 大小写不敏感；source 可省略） |
 
@@ -184,8 +185,21 @@ Invoke-RestMethod http://127.0.0.1:17860/health   # 看不到 features 就是旧
   | `agent/pre-step`（waterfall，纯观测、原样 `next()`） | `UserPromptSubmit` | 正在工作 |
   | `tools/post-execute`（waterfall，纯观测、原样 `next()`） | `PostToolUse` | 正在工作 |
   | `approval/asked`（durable session 事件） | `PermissionRequest` | 等待审批 |
+  | `approval/decided`（durable session 事件） | `approval/decided` | 立刻回到正在工作 |
+  | `tool/call` 且工具名为 `ask_user_question` | `PermissionRequest` | 等待审批（"想和你对话"） |
   | `agent/turn-stopping` | `Stop` | 刚完成任务（15s 后衰减） |
   | `agent/disposed` | `SessionEnd` | 空闲 |
+
+  > **dsh 里"智能体停下来等你"有两种完全不同的机制**，都必须映射成 `PermissionRequest`，
+  > 否则女主会在你被晾着的时候继续"工作"：
+  >
+  > 1. **权限审批**：执行敏感工具前请求授权 → 会话事件 `approval/asked`（有 `toolName` 与 `reason`）。
+  > 2. **智能体主动提问**：模型调用 `ask_user_question` 工具问你 → 这**只是一次普通的 `tool/call`**，
+  >    dsh 没有为它定义专门的事件类型（已核对 `known-event-types` 与真实会话日志），
+  >    所以只能按工具名识别。
+  >
+  > 两条路径的"已答复"侧都不用额外处理：`approval/decided` 会立刻回到工作中，
+  > 提问则由工具执行完成（`tools/post-execute`）自然回到工作中。
 
   为什么不直接用官方桥接包 `@deepseek-ai/dsh-hooks-codex`：
 
