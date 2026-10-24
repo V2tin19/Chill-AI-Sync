@@ -13,7 +13,11 @@ builder.Services.AddSingleton(store);
 
 var app = builder.Build();
 
-app.MapGet("/health", () => Results.Ok(new HealthResponse("ok", "1.0.8")));
+// 能力标记：插件用它判断端口上跑的是不是同一代 Bridge（见 HealthResponse 注释）。
+// 新增会影响行为的能力时，往这里加一个标记即可让旧实例被自动替换。
+var features = new[] { "source-aggregation" };
+
+app.MapGet("/health", () => Results.Ok(new HealthResponse("ok", "1.0.8", features)));
 
 // Codex hooks 转发脚本上报生命周期事件（POST 一行 JSON）
 app.MapPost("/codex/events", (CodexEvent evt, CodexStatusStore s, ILogger<Program> log) =>

@@ -96,16 +96,54 @@ Invoke-RestMethod http://127.0.0.1:17860/codex/status
 | turnaborted / sessionend | `idle` | 收工告别 |
 | （兜底）working 超 2 分钟（120 秒）无事件 | `waiting` | 防止钩子静默失效后卡死 |
 
+### 多工具聚合（重要）
+
+Bridge **按来源（工具）分别记账，再聚合**——不是"谁最后发事件听谁的"。
+
+早期实现只有一个全局状态，同时开两个工具时会互相打架，例如：
+
+- Codex 正在跑任务，dsh 那边一个 `Stop` 就把状态改成 `justdone` → 女主跑去庆祝，而 Codex 还在干活；
+- dsh 会话结束（`sessionend` → `idle`）会把正在工作的 Codex 状态清掉 → 女主直接停手。
+
+现在每个来源各留一份状态（各自独立衰减），聚合优先级为：
+
+```text
+working(6) > waitingreview(5) > justdone(4) > waiting(3) > idle(2) > unknown(1)
+```
+
+即：**只要有任何一个工具在工作，女主就工作**；都不工作时才依次考虑等审批、刚完成、待命、空闲。
+同优先级取最近有事件的那个来源。这样多工具并用时状态稳定，不会来回闪烁。
+
+> 取舍说明：`working` 优先级高于 `waitingreview`，意味着一个工具在干活时，另一个工具的
+> 审批提醒会被"工作"盖住（不会闪烁）。如果你更希望审批提醒一定抢到显示，把
+> `CodexStatusStore.Priority` 里这两档的数字对调即可。
+
+来源由上报方声明：`codex-hook.ps1` 用 `-Source codex|zcode|antigravity`，
+`dsh-hook.mjs` 固定发 `source: "dsh"`。**不传 `source` 的上报全部归入 `default` 这一个来源**，
+此时聚合结果与旧版行为完全一致（向后兼容）。
+
 状态变更同时记录最近 50 条事件历史（`GET /codex/events`），便于诊断和做更细的行为。
 
 ## HTTP API
 
 | 端点 | 方法 | 说明 |
 |---|---|---|
-| `/health` | GET | 健康检查 `{"status":"ok"}` |
+| `/health` | GET | 健康检查 `{"status":"ok","version":"1.0.8","features":["source-aggregation"]}`；`features` 供插件判断端口上跑的是不是同一代 Bridge |
 | `/codex/status` | GET | 当前状态（state / detail / sinceUtc / lastEvent / secondsSinceLastEvent） |
-| `/codex/events` | GET | 最近 50 条事件历史（event / detail / atUtc / stateAfter） |
-| `/codex/events` | POST | 上报事件 `{"event":"Stop","detail":"可选"}`（大小写不敏感） |
+| `/codex/events` | GET | 最近 50 条事件历史（event / detail / atUtc / stateAfter / source） |
+| `/codex/events` | POST | 上报事件 `{"event":"Stop","detail":"可选","source":"codex"}`（event 大小写不敏感；source 可省略） |
+
+### 旧 Bridge 残留（升级时必看）
+
+游戏退出时不一定会回收 Bridge 进程，而插件发现端口上已有 Bridge 会**复用**它。
+于是"装了新版插件、但旧 Bridge 还在跑"会让新逻辑（多来源聚合）**静默不生效**。
+
+插件已能自愈：启动时读 `/health` 的 `features`，缺少 `source-aggregation` 就结束旧进程再拉起新版。
+`doctor.bat` 也会检查这一项并清理。若你手动排查，记住这条：
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:17860/health   # 看不到 features 就是旧版，需要重启游戏
+```
 
 ## 故障排查
 
@@ -116,6 +154,7 @@ Invoke-RestMethod http://127.0.0.1:17860/codex/status
 | `clamping ... timeout to 3s` 警告 | hooks.json 里 SessionEnd 等事件的 `timeout` 超过 3s，改成 `3` 即可（官方上限） |
 | 重启 App 后 `codex_hooks` 配置消失 | 桌面 App 会用内部状态重写 config.toml，清掉它不认识的键 → 在 **App 设置里**打开 Hooks 开关（App 自己持久化），不要只改 config.toml |
 | 端口 17860 被占用 | 先杀旧进程再启动（`Stop-Process` / 任务管理器） |
+| 同时开两个工具时状态乱跳 | 正在跑的 Bridge 是旧版本（`/health` 里没有 `features`）→ 结束 `ChillAI.Bridge` 进程后重启游戏 |
 | 模型报 503 / No available channel | 与钩子无关，是模型代理（如 cc-switch）的通道问题 |
 | 转发脚本静默失败 | 脚本设计为 Bridge 未启动时静默退出、不阻塞 Codex；确认 Bridge 已启动 |
 

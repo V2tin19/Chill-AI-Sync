@@ -39,6 +39,9 @@ export const inject = []
 /** Bridge 事件上报地址；可用 CHILLAI_BRIDGE_URL 覆盖。 */
 const BRIDGE_URL = process.env.CHILLAI_BRIDGE_URL || 'http://127.0.0.1:17860/codex/events'
 
+/** 上报来源标识：Bridge 按来源分别记账再聚合，避免多工具同时使用时状态互相打架。 */
+const SOURCE = 'dsh'
+
 /** 单次上报的超时（毫秒）：超时即放弃，绝不让请求堆积。 */
 const REQUEST_TIMEOUT_MS = 2000
 
@@ -49,7 +52,7 @@ const REQUEST_TIMEOUT_MS = 2000
  */
 function report(event, detail) {
   try {
-    const payload = detail ? { event, detail: String(detail) } : { event }
+    const payload = detail ? { event, detail: String(detail), source: SOURCE } : { event, source: SOURCE }
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
     fetch(BRIDGE_URL, {

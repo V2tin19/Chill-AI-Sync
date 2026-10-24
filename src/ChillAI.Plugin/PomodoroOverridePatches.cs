@@ -9,7 +9,7 @@ namespace ChillAI.Plugin
     ///   → HeroineService.StartPomodoroTimer/OnPomodoroWorkEnd/OnPomodoroBreakTimeEnd/OnPomodoroComplete
     ///   → HeroineAI.ChangePomodoroActionAsync() ← 番茄钟动作的唯一汇聚入口
     /// 旧的 ReadyChangePomodoroState/StartWork/StartBreak 在程序集内无调用点，保留作兜底。
-    /// 拦截受 ToolPrimary（工具优先）与任一工具启用（Codex/ZCode）双重控制。
+    /// 拦截受 ToolPrimary（工具优先）与任一工具启用（Codex/ZCode/Antigravity/dsh）双重控制。
     /// </summary>
     public static class PomodoroOverridePatches
     {
@@ -23,13 +23,22 @@ namespace ChillAI.Plugin
             {
                 return false;
             }
-            if (!((Plugin.EnableCodex?.Value ?? false)
-                  || (Plugin.EnableZcode?.Value ?? false)
-                  || (Plugin.EnableAntigravity?.Value ?? false)))
+            // 四个工具必须一视同仁：漏掉任何一个，"只开那一个"的用户就会既被番茄钟驱动、
+            // 又被工具状态驱动，两边打架（v1.0.5 修过一次"只开 ZCode"，这里是同一类问题）。
+            if (!AnyToolEnabled())
             {
                 return false;
             }
             return StatusWorker.BridgeConnected && StatusWorker.CurrentCodexState != "unknown";
+        }
+
+        /// <summary>是否有任一工具联动处于启用状态（与 StatusWorker 的总开关判定保持一致）。</summary>
+        private static bool AnyToolEnabled()
+        {
+            return (Plugin.EnableCodex?.Value ?? false)
+                || (Plugin.EnableZcode?.Value ?? false)
+                || (Plugin.EnableAntigravity?.Value ?? false)
+                || (Plugin.EnableDsh?.Value ?? false);
         }
 
         private static void ThrottledLog(string message)

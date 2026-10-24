@@ -412,7 +412,7 @@ namespace ChillAI.Plugin
                     new JObject(
                         new JProperty("type", "process"),
                         new JProperty("command", "powershell.exe"),
-                        new JProperty("args", new JArray("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath, "-EventName", evt)),
+                        new JProperty("args", new JArray("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath, "-EventName", evt, "-Source", "zcode")),
                         new JProperty("timeoutMs", 3000)
                     )
                 ))
@@ -422,7 +422,7 @@ namespace ChillAI.Plugin
         /// <summary>Codex 单个事件的 matcher group：command 执行器，命令路径指向插件目录的 codex-hook.ps1。</summary>
         private static JObject BuildCodexEventGroup(string scriptPath, string evt)
         {
-            var cmd = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{scriptPath}\" -EventName {evt}";
+            var cmd = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{scriptPath}\" -EventName {evt} -Source codex";
             return new JObject(
                 new JProperty("hooks", new JArray(
                     new JObject(
@@ -551,7 +551,7 @@ namespace ChillAI.Plugin
         /// <summary>构建 Antigravity 官方 schema 格式的 named hook 配置。</summary>
         private static JObject BuildAntigravityHookConfig(string scriptPath)
         {
-            var cmdTpl = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{scriptPath}\" -EventName ";
+            var cmdTpl = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{scriptPath}\" -Source antigravity -EventName ";
             return new JObject(
                 new JProperty("PreInvocation", new JArray(
                     new JObject(

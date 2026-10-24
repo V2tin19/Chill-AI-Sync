@@ -23,9 +23,14 @@ namespace ChillAI.Plugin
         private static volatile bool _shuttingDown;
         private static bool _processExitHooked;
 
+        /// <summary>本插件这一代 Bridge 必须支持的能力标记（与 Bridge 的 /health 对齐）。</summary>
+        private const string RequiredFeature = "source-aggregation";
+
         /// <summary>
         /// 静默启动/复用 Bridge。整个游戏会话只尝试一次（Start 与每帧 Tick 都可能调用；
         /// 避免 Bridge 冷启动期间端口未开而被重复拉起）。
+        /// 若端口上已有 Bridge 但缺少本代能力标记（旧版本残留进程），先把它结束掉再启动新的，
+        /// 否则"装了新版却仍按旧逻辑跑"会静默发生。
         /// </summary>
         public static void EnsureBridgeRunning()
         {
@@ -35,10 +40,27 @@ namespace ChillAI.Plugin
             }
             _ensureAttempted = true;
 
-            if (IsBridgeAlive())
+            var health = ProbeHealth();
+            if (health != null)
             {
-                Log("检测到已有 Bridge 在运行（/health 正常），直接复用");
-                return;
+                if (HasRequiredFeature(health))
+                {
+                    Log("检测到已有 Bridge 在运行（/health 正常且能力匹配），直接复用");
+                    return;
+                }
+
+                Log($"检测到正在运行的 Bridge 缺少能力标记 \"{RequiredFeature}\"（旧版本残留进程），正在结束它以便启动新版");
+                if (!StopStaleBridges())
+                {
+                    Log("结束旧 Bridge 失败，本次仍复用旧进程（多来源聚合等新逻辑不会生效）。" +
+                        "可手动结束 ChillAI.Bridge 进程后重启游戏。");
+                    return;
+                }
+                if (!WaitForPortFree(TimeSpan.FromSeconds(5)))
+                {
+                    Log("旧 Bridge 结束后端口仍被占用，跳过自动启动；请手动结束占用 17860 的进程后重启游戏。");
+                    return;
+                }
             }
 
             var pluginDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
@@ -72,6 +94,85 @@ namespace ChillAI.Plugin
             {
                 Log("启动 Bridge 失败: " + ex.Message);
             }
+        }
+
+        /// <summary>探测 /health；不可达或不是我们的服务时返回 null。</summary>
+        private static string ProbeHealth()
+        {
+            try
+            {
+                using var resp = HealthClient.GetAsync($"http://127.0.0.1:{BridgePort}/health").Result;
+                if (!resp.IsSuccessStatusCode)
+                {
+                    return null;
+                }
+                var body = resp.Content.ReadAsStringAsync().Result;
+                return body != null && body.Contains("ok") ? body : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>/health 里是否带上了本代必需的能力标记。</summary>
+        private static bool HasRequiredFeature(string healthJson)
+        {
+            return healthJson.IndexOf(RequiredFeature, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>
+        /// 结束残留的 ChillAI.Bridge 进程。只按进程名匹配（已在 /health 上确认端口上是我们的
+        /// Bridge 才会走到这里），并跳过本进程自己拉起的那一个。
+        /// </summary>
+        private static bool StopStaleBridges()
+        {
+            var killed = false;
+            try
+            {
+                foreach (var proc in Process.GetProcessesByName("ChillAI.Bridge"))
+                {
+                    try
+                    {
+                        if (_process != null && proc.Id == _process.Id)
+                        {
+                            continue;
+                        }
+                        proc.Kill();
+                        proc.WaitForExit(3000);
+                        killed = true;
+                        Log($"已结束旧 Bridge 进程（pid {proc.Id}）");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"结束旧 Bridge 进程失败（pid {proc.Id}）: {ex.Message}");
+                    }
+                    finally
+                    {
+                        proc.Dispose();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("枚举 Bridge 进程失败: " + ex.Message);
+            }
+            return killed;
+        }
+
+        /// <summary>等待端口上的旧实例真正退出（/health 不再响应）。</summary>
+        private static bool WaitForPortFree(TimeSpan timeout)
+        {
+            var deadline = DateTime.UtcNow + timeout;
+            while (DateTime.UtcNow < deadline)
+            {
+                if (ProbeHealth() == null)
+                {
+                    return true;
+                }
+                System.Threading.Thread.Sleep(200);
+            }
+            return ProbeHealth() == null;
         }
 
         /// <summary>后台监视 Bridge 进程：启动即退（缺 ASP.NET Core 8 运行时等）时在日志给出可行动的提示。</summary>
@@ -136,20 +237,7 @@ namespace ChillAI.Plugin
         /// <summary>用 /health 探测 Bridge 是否存活（端口有人但不响应 /health 的程序不算）。</summary>
         private static bool IsBridgeAlive()
         {
-            try
-            {
-                using var resp = HealthClient.GetAsync($"http://127.0.0.1:{BridgePort}/health").Result;
-                if (!resp.IsSuccessStatusCode)
-                {
-                    return false;
-                }
-                var body = resp.Content.ReadAsStringAsync().Result;
-                return body != null && body.Contains("ok");
-            }
-            catch
-            {
-                return false;
-            }
+            return ProbeHealth() != null;
         }
 
         private static void Log(string message)

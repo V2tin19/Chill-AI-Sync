@@ -40,8 +40,10 @@ function Write-Note([string]$text) { Write-Host "    $text" -ForegroundColor Gra
 $pluginCs = Join-Path $repoRoot 'src\ChillAI.Plugin\Plugin.cs'
 $programCs = Join-Path $repoRoot 'src\ChillAI.Bridge\Program.cs'
 $pluginVersion = ([regex]::Match((Get-Content -LiteralPath $pluginCs -Raw), 'PluginVersion\s*=\s*"([^"]+)"')).Groups[1].Value
-$bridgeVersion = ([regex]::Match((Get-Content -LiteralPath $programCs -Raw), 'HealthResponse\("ok",\s*"([^"]+)"\)')).Groups[1].Value
+# 不锚定右括号：HealthResponse 以后可能再加参数（例如 features），这里只取版本字符串
+$bridgeVersion = ([regex]::Match((Get-Content -LiteralPath $programCs -Raw), 'HealthResponse\("ok",\s*"([^"]+)"')).Groups[1].Value
 if (-not $pluginVersion) { throw "没能从 Plugin.cs 读到 PluginVersion" }
+if (-not $bridgeVersion) { Write-Warning "没能从 Program.cs 读到 Bridge 版本号（正则可能又过时了），跳过版本一致性校验" }
 
 Write-Step "版本：插件 $pluginVersion / Bridge $bridgeVersion"
 if ($bridgeVersion -and $bridgeVersion -ne $pluginVersion) {

@@ -16,7 +16,8 @@
     -TestEvents       额外做一次「往 Bridge 打假事件」的通路测试（会让女主角动一下）
     -Pause            结束时等待按键（.bat 双击时使用）
 
-  本脚本只读不改（唯一的例外：Bridge 没在跑时会临时帮你启动它，方便继续排查）。
+  本脚本只读不改（两个例外：Bridge 没在跑时会临时帮你启动它，体检结束会自动停掉；
+  检测到端口上是旧版本 Bridge 时会帮你结束它，好让下次启动游戏拉起新版）。
 #>
 [CmdletBinding()]
 param(
@@ -245,6 +246,34 @@ Write-Section '[4/6] 本地状态服务（Bridge）'
 $health = Get-BridgeHealth
 if ($health -and $health.status -eq 'ok') {
     Pass "Bridge 正在运行（版本 $($health.version)）"
+
+    # 能力标记检查：旧版 Bridge 进程会残留（游戏退出时不一定被回收），
+    # 而插件会复用它 —— 于是"装了新版插件却仍按旧逻辑跑"，多工具同时使用时状态互相顶掉。
+    $features = @($health.features)
+    if ($features -contains 'source-aggregation') {
+        Pass 'Bridge 支持多来源聚合（多个工具同时使用不会互相打架）'
+    } else {
+        Warn '正在运行的 Bridge 是旧版本（没有多来源聚合能力）——同时开两个工具时状态会互相顶掉'
+        $stale = @(Get-Process -Name 'ChillAI.Bridge' -ErrorAction SilentlyContinue)
+        if ($stale.Count -gt 0) {
+            Info "正在结束 $($stale.Count) 个旧 Bridge 进程（下次启动游戏会自动拉起新版）..."
+            foreach ($proc in $stale) {
+                try { Stop-Process -Id $proc.Id -Force -ErrorAction Stop; Info "  已结束 pid $($proc.Id)" }
+                catch { Warn "  结束 pid $($proc.Id) 失败：$($_.Exception.Message)" }
+            }
+            Start-Sleep -Milliseconds 800
+            $script:StartedBridge = $false  # 已经手动停掉了，收尾时不需要再停
+            $health = Get-BridgeHealth
+            if ($health) {
+                Warn '端口上仍有 Bridge 在响应（可能刚被别的进程重新拉起）；重启游戏即可用上新版'
+            } else {
+                Pass '旧 Bridge 已结束'
+            }
+            Fix '重启一次游戏，让插件拉起新版 Bridge（新版才支持多工具聚合）'
+        } else {
+            Fix '结束旧的 ChillAI.Bridge 进程后重启游戏（或重跑一键安装）'
+        }
+    }
 } else {
     $owner = Get-PortOwner 17860
     if ($owner) {
@@ -292,11 +321,15 @@ if ($null -ne $events) {
         Fix '去你的 AI 工具里跑一个任务（Codex 需要先在设置里打开 Hooks 并批准信任）；然后重新运行体检'
     } else {
         Pass "Bridge 已收到 $($events.Count) 条事件（说明链路至少通过一次）"
+        $sources = @($events | ForEach-Object { if ($_.source) { $_.source } else { '(未标注)' } } | Select-Object -Unique)
+        Info "  涉及来源：$($sources -join '、')（多来源各自记账后聚合，不会互相打架）"
         $tail = $events | Select-Object -Last 5
         foreach ($e in $tail) {
             $detail = ''
             if ($e.detail) { $detail = "  detail=$($e.detail)" }
-            Info ("  {0}  {1} -> {2}{3}" -f $e.atUtc, $e.event, $e.stateAfter, $detail)
+            $src = ''
+            if ($e.source) { $src = "  [$($e.source)]" }
+            Info ("  {0}  {1} -> {2}{3}{4}" -f $e.atUtc, $e.event, $e.stateAfter, $src, $detail)
         }
     }
 }

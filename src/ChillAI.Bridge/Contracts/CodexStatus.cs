@@ -22,11 +22,17 @@ public enum CodexState
     Idle,
 }
 
-/// <summary>POST /codex/events 的请求体，event 为 hooks 事件名（大小写不敏感）。</summary>
-public sealed record CodexEvent(string Event, string? Detail = null);
+/// <summary>
+/// POST /codex/events 的请求体。
+/// <paramref name="Event"/> 为 hooks 事件名（大小写不敏感）。
+/// <paramref name="Source"/> 为上报来源（工具名，如 codex / zcode / antigravity / dsh）；
+/// 省略时归入 "default" 单一来源——此时行为与旧版完全一致（谁最后发事件听谁的）。
+/// 多个来源各自记账后聚合，避免同时开两个工具时状态互相打架。
+/// </summary>
+public sealed record CodexEvent(string Event, string? Detail = null, string? Source = null);
 
 /// <summary>已收到的历史事件（诊断用）。</summary>
-public sealed record CodexEventRecord(string Event, string? Detail, DateTimeOffset AtUtc, string StateAfter);
+public sealed record CodexEventRecord(string Event, string? Detail, DateTimeOffset AtUtc, string StateAfter, string? Source = null);
 
 /// <summary>GET /codex/status 的响应体。</summary>
 public sealed record CodexStatusDto(
